@@ -1,0 +1,51 @@
+# Processamento Digital de Imagens
+
+Este projeto é uma aplicação interativa para processamento digital de imagens, desenvolvida em Python utilizando [Streamlit](https://streamlit.io/). Permite o upload de imagens, aplicação de filtros, operações morfológicas, segmentação, análise de descritores (cor, forma e textura), visualização de histogramas e manipulação de um pipeline de operações. O projeto foi desenvolvido como parte da disciplina de Introdução ao Processamento Digital de Imagens.
+
+## Funcionalidades
+
+- **Upload de Imagem:** Suporte a arquivos PNG, JPG e JPEG.
+- **Visualização:** Exibição da imagem original (RGB), em tons de cinza e seus histogramas (normal e normalizado).
+- **Descritores de Imagem:** 
+  - Cor (histograma, média, desvio padrão e momentos)
+  - Forma (momentos de Hu, descritores de Fourier, momentos de Zernike, área, perímetro e circularidade)
+  - Textura (Haralick, LBP e contornos)
+- **Espectro de Fourier:** Visualização do espectro de magnitude.
+- **Operações de Processamento:** 
+  - Filtros passa-baixa (Média, Mediana, Gaussiano, Máximo, Mínimo)
+  - Filtros passa-alta (Laplaciano, Roberts, Prewitt, Sobel)
+  - Filtro personalizado (máscara/kernel customizado)
+  - Segmentação (Limiarização simples, Otsu, Canny, Limiarização adaptativa, Otsu Adaptativo, Limiarização iterativa)
+  - Morfologia (Abertura, Fechamento, Erosão, Dilatação, Hit or Miss)
+  - Seleção de objetos (Maior objeto, objeto central, contornos fechados)
+- **Pipeline:** Permite adicionar, remover e aplicar múltiplas operações sequencialmente.
+- **Download:** Baixe imagens e resultados intermediários/finais.
+- **Aplicação de Máscara:** Aplique o resultado do pipeline como máscara sobre a imagem original.
+
+## Como Executar
+
+1. **Pré-requisitos:**
+   - Python 3.7+
+
+2. **Instale as dependências:**
+   ```
+   pip install streamlit opencv-python-headless numpy matplotlib mahotas
+   ```
+
+3. **Execute o aplicativo:**
+   ```
+   streamlit run main.py
+   ```
+
+4. **Acesse no navegador:**  
+   O Streamlit abrirá automaticamente ou acesse [http://localhost:8501](http://localhost:8501).
+
+## Estrutura dos Arquivos
+
+- `main.py` — Interface principal Streamlit e lógica de controle.
+- `tools.py` — Funções utilitárias para filtros, segmentação, morfologia, descritores, exibição e download.
+- `exemplo.png` — Imagem de exemplo para testes.
+
+---
+
+Sinta-se à vontade para contribuir ou adaptar este projeto!
