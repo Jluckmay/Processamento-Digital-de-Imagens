@@ -46,6 +46,10 @@ Este projeto é uma aplicação interativa para processamento digital de imagens
 - `tools.py` — Funções utilitárias para filtros, segmentação, morfologia, descritores, exibição e download.
 - `exemplo.png` — Imagem de exemplo para testes.
 
+
+## Licença
+
+Este projeto está licenciado sob a licença MIT. Consulte o arquivo [LICENSE](LICENSE) para mais detalhes.
 ---
 
 Sinta-se à vontade para contribuir ou adaptar este projeto!
