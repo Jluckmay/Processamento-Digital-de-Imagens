@@ -37,6 +37,8 @@ Este projeto é uma aplicação interativa para processamento digital de imagens
    streamlit run main.py
    ```
 
+   ![Execução do app](https://media0.giphy.com/media/v1.Y2lkPTc5MGI3NjExczhhYjVlNjNzM3BsaTcyYTFnY2x4empybTVza2dua21pMWJnenBtOCZlcD12MV9pbnRlcm5hbF9naWZfYnlfaWQmY3Q9Zw/TvOA2NlXu6AVV93gV3/giphy.gif)
+
 4. **Acesse no navegador:**  
    O Streamlit abrirá automaticamente ou acesse [http://localhost:8501](http://localhost:8501).
 
