@@ -256,7 +256,9 @@ def convert_to_bytes(img):
     Returns:
         BytesIO: Objeto em bytes pronto para download.
     """
-
+    # Se for imagem RGB (3 canais), converte para BGR antes de salvar
+    if len(img.shape) == 3 and img.shape[2] == 3:
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
     _, img_encoded = cv2.imencode(".png", img)
     return BytesIO(img_encoded.tobytes())
 
