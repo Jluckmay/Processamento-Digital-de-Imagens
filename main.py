@@ -1,6 +1,7 @@
-from tools import *
-from ruidos import *
-from filtros import *
+from src.tools import *
+from src.ruidos import *
+from src.filtros import *
+import src.fourier_operations as fourier
 
 # Configuração do estilo do Matplotlib para evitar fundos brancos
 plt.style.use("dark_background")
@@ -65,32 +66,15 @@ if uploaded_file is not None:
 
     # Exibir descritor selecionado
     describe_image(imagem_rgb, descritor)
-
-    # Cálculo do espectro de Fourier
-    imagem_fft = np.fft.fft2(imagem_gray)
-    # Desloca a frequência zero para o centro
-    imagem_fft_shifted = np.fft.fftshift(imagem_fft)
-    # Calcula o espectro de magnitude
-    magnitude_spectrum = np.log(np.abs(imagem_fft_shifted) + 1)
-
-    # Normaliza o espectro de magnitude para exibição
-    show_image(magnitude_spectrum, "Espectro de Fourier", cmap="gray")
-    st.download_button(
-        "📥 Baixar Espectro de Fourier",
-        data=convert_for_download(magnitude_spectrum),
-        file_name="espectro_fourier.png",
-        mime="image/png"
-    )
     
    # Inicialize o pipeline na sessão
     if "pipeline" not in st.session_state:
         st.session_state.pipeline = []
 
 
-
     # Seleção do tipo de operação
     st.sidebar.title("Operações de Processamento de Imagem")
-    tipo = st.sidebar.selectbox("Selecione uma operação", ["Nenhum", "Filtro Passa-Baixa", "Filtro Passa-Alta", "Segmentação", "Morfologia", "Seleção de Objetos", "Ruídos", "Outros Filtros"])
+    tipo = st.sidebar.selectbox("Selecione uma operação", ["Nenhum", "Filtro Passa-Baixa", "Filtro Passa-Alta", "Segmentação", "Morfologia", "Seleção de Objetos", "Ruídos", "Fourier" ,"Outros Filtros"])
 
     if tipo == "Filtro Passa-Baixa":
         # Opções de filtro passa-baixa
@@ -263,8 +247,83 @@ if uploaded_file is not None:
                 if st.sidebar.button("Adicionar operação"):
                     st.session_state.pipeline.append(("Filtro Personalizado", kernel))
 
+    elif tipo == "Fourier":
+        op = st.sidebar.selectbox(
+            "Operação de Fourier",
+            ["Transformada de Fourier", "Magnitude", "Inversa", "Filtro Passa-Baixa", "Filtro Passa-Alta", "Filtro Personalizado"]
+        )
 
+        if op == "Transformada de Fourier":
+            # Transformada de Fourier
+            f_transform = fourier.fourier_transform(entrada_atual)
+            show_image(fourier.fourier_magnitude(f_transform), "Transformada de Fourier", cmap="gray")
+            st.download_button(
+                "📥 Baixar Transformada de Fourier",
+                data=convert_for_download(np.log1p(np.abs(f_transform))),
+                file_name="fourier_transform.png",
+                mime="image/png"
+            )
+            if st.sidebar.button("Adicionar Transformada de Fourier ao Pipeline"):
+                st.session_state.pipeline.append(("Transformada de Fourier", None))
+            
+        elif op == "Filtro Passa-Baixa":
+            # Filtro Passa-Baixa na Transformada de Fourier
+            raio = st.sidebar.slider("Raio do Filtro Passa-Baixa", 1, 100, 30)
+            f_transform = fourier.fourier_transform(entrada_atual)
+            tipo = st.sidebar.selectbox("Tipo de Filtro Passa-Baixa", ["Gaussiano", "Média", "Mediana", "Máximo", "Mínimo"])
+            filtered_transform = fourier.filtro_passa_baixa(entrada_atual.shape, f_transform, tipo, raio)
+            img_filtered = fourier.inverse_fourier_transform(filtered_transform)
+            show_image(img_filtered, "Filtro Passa-Baixa na Transformada de Fourier", cmap="gray")
+            st.download_button(
+                "📥 Baixar Imagem com Fourier Passa-Baixa",
+                data=convert_for_download(img_filtered),
+                file_name="fourier_low_pass.png",
+                mime="image/png"
+            )
+            if st.sidebar.button("Adicionar Filtro Passa-Baixa ao Pipeline"):
+                st.session_state.pipeline.append(("Fourier Passa-Baixa", raio))
 
+        elif op == "Filtro Passa-Alta":
+            # Filtro Passa-Alta na Transformada de Fourier
+            raio = st.sidebar.slider("Raio do Filtro Passa-Alta", 1, 100, 30)
+            f_transform = fourier.fourier_transform(entrada_atual)
+            tipo = st.sidebar.selectbox("Tipo de Filtro Passa-Alta", ["Laplaciano", "Sobel", "Roberts", "Prewitt"])
+            filtered_transform = fourier.filtro_passa_alta(entrada_atual.shape, f_transform, tipo, raio)
+            img_filtered = fourier.inverse_fourier_transform(filtered_transform)
+            show_image(img_filtered, "Filtro Passa-Alta na Transformada de Fourier", cmap="gray")
+            st.download_button(
+                "📥 Baixar Imagem com Fourier Passa-Alta",
+                data=convert_for_download(img_filtered),
+                file_name="fourier_high_pass.png",
+                mime="image/png"
+            )
+            if st.sidebar.button("Adicionar Filtro Passa-Alta ao Pipeline"):
+                st.session_state.pipeline.append(("Fourier Passa-Alta", raio))
+        elif op == "Filtro Personalizado": 
+            # Filtro Personalizado na Transformada de Fourier
+            kernel = st.sidebar.text_area("Insira o kernel", value="", placeholder="[[1, 0, -1], [1, 0, -1], [1, 0, -1]]")
+            
+            if not kernel:
+                st.error("Por favor, insira um kernel válido.")
+            else:
+                try:
+                    kernel = eval(kernel)  # Avalia a string como uma lista de listas
+                    if isinstance(kernel, list) and all(isinstance(row, list) for row in kernel):
+                        f_transform = fourier.fourier_transform(entrada_atual)
+                        img_filtered = fourier.filtro_personalizado(f_transform, kernel)
+                        show_image(img_filtered, "Filtro Personalizado na Transformada de Fourier", cmap="gray")
+                        st.download_button(
+                            "📥 Baixar Imagem Fourier com Filtro Personalizado",
+                            data=convert_for_download(img_filtered),
+                            file_name="fourier_custom_filter.png",
+                            mime="image/png"
+                        )
+                        if st.sidebar.button("Adicionar Filtro Personalizado ao Pipeline"):
+                            st.session_state.pipeline.append(("Fourier Filtro Personalizado", kernel))
+                    else:
+                        st.error("O kernel deve ser uma lista de listas.")
+                except Exception as e:
+                    st.error(f"Erro ao processar o kernel: {e}")
 
     # Mostrar pipeline e opção de remover
     st.write("Operações aplicadas:")
@@ -304,6 +363,26 @@ if uploaded_file is not None:
                 img = filtro_personalizado(img, op[1])
             else:
                 st.error("Filtro personalizado não possui kernel definido.")
+        elif op[0] == "Transformada de Fourier":
+            f_transform = fourier.fourier_transform(img)
+            img = fourier.inverse_fourier_transform(f_transform)
+        elif op[0] == "Fourier Passa-Baixa":
+            raio = op[1]
+            f_transform = fourier.fourier_transform(img)
+            filtered_transform = fourier.filtro_passa_baixa(img.shape, f_transform, 'gaussiano', raio)
+            img = fourier.inverse_fourier_transform(filtered_transform)
+        elif op[0] == "Fourier Passa-Alta":
+            raio = op[1]
+            f_transform = fourier.fourier_transform(img)
+            filtered_transform = fourier.filtro_passa_alta(img.shape, f_transform, 'gaussiano', raio)
+            img = fourier.inverse_fourier_transform(filtered_transform)
+        elif op[0] == "Fourier Filtro Personalizado":
+            if op[1] is not None:
+                f_transform = fourier.fourier_transform(img)
+                img = fourier.filtro_personalizado(f_transform, op[1])
+            else:
+                st.error("Filtro personalizado não possui kernel definido.")
+
 
     # Atualizar a imagem de entrada atual no estado da sessão
     st.session_state.entrada_atual = img

@@ -15,9 +15,13 @@ Este projeto é uma aplicação interativa para processamento digital de imagens
   - Filtros passa-baixa (Média, Mediana, Gaussiano, Máximo, Mínimo)
   - Filtros passa-alta (Laplaciano, Roberts, Prewitt, Sobel)
   - Filtro personalizado (máscara/kernel customizado)
+  - Transformada de Fourier
+  - Operações no Domínio de Fourier (Filtros passa-baixa, Filtros passa-alta e Filtro personalizado)
+  - Filtro Negativo
   - Segmentação (Limiarização simples, Otsu, Canny, Limiarização adaptativa, Otsu Adaptativo, Limiarização iterativa)
   - Morfologia (Abertura, Fechamento, Erosão, Dilatação, Hit or Miss)
   - Seleção de objetos (Maior objeto, objeto central, contornos fechados)
+  - Ruídos (Colocar ruídos na imagem)
 - **Pipeline:** Permite adicionar, remover e aplicar múltiplas operações sequencialmente.
 - **Download:** Baixe imagens e resultados intermediários/finais.
 - **Aplicação de Máscara:** Aplique o resultado do pipeline como máscara sobre a imagem original.
@@ -45,7 +49,7 @@ Este projeto é uma aplicação interativa para processamento digital de imagens
 ## Estrutura dos Arquivos
 
 - `main.py` — Interface principal Streamlit e lógica de controle.
-- `tools.py` — Funções utilitárias para filtros, segmentação, morfologia, descritores, exibição e download.
+- `src` — Pasta com os arquivos das funções utilitárias para filtros, segmentação, morfologia, descritores, exibição e download.
 - `exemplo.png` — Imagem de exemplo para testes.
 
 
