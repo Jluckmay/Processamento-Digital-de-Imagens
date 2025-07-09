@@ -1,4 +1,6 @@
 from tools import *
+from ruidos import *
+from filtros import *
 
 # Configuração do estilo do Matplotlib para evitar fundos brancos
 plt.style.use("dark_background")
