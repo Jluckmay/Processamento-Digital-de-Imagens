@@ -88,7 +88,7 @@ if uploaded_file is not None:
 
     # Seleção do tipo de operação
     st.sidebar.title("Operações de Processamento de Imagem")
-    tipo = st.sidebar.selectbox("Selecione uma operação", ["Nenhum", "Filtro Passa-Baixa", "Filtro Passa-Alta", "Segmentação", "Morfologia", "Seleção de Objetos", "Filtro Personalizado"])
+    tipo = st.sidebar.selectbox("Selecione uma operação", ["Nenhum", "Filtro Passa-Baixa", "Filtro Passa-Alta", "Segmentação", "Morfologia", "Seleção de Objetos", "Ruídos", "Outros Filtros"])
 
     if tipo == "Filtro Passa-Baixa":
         # Opções de filtro passa-baixa
@@ -125,34 +125,6 @@ if uploaded_file is not None:
         # Adicionar operação ao pipeline
         if st.sidebar.button("Adicionar operação"):
             st.session_state.pipeline.append(("Filtro Passa-Alta", op))
-
-    elif tipo == "Filtro Personalizado":
-        # Filtro personalizado
-        st.sidebar.subheader("Filtro Personalizado")
-        kernel = st.sidebar.text_area("Insira o kernel", value="", placeholder="[[1, 0, -1], [1, 0, -1], [1, 0, -1]]")
-        
-        if not kernel:
-            st.error("Por favor, insira um kernel válido.")
-        else:
-            try:
-                kernel = eval(kernel)  # Avalia a string como uma lista de listas
-                if isinstance(kernel, list) and all(isinstance(row, list) for row in kernel):
-                    preview_img = filtro_personalizado(entrada_atual, kernel)
-                    show_image(preview_img, "Preview: Filtro Personalizado", cmap="gray")
-                    st.download_button(
-                        "📥 Baixar Preview Filtro Personalizado",
-                        data=convert_for_download(preview_img),
-                        file_name="filtro_personalizado.png",
-                        mime="image/png"
-                    )
-                else:
-                    st.error("O kernel deve ser uma lista de listas.")
-            except Exception as e:
-                st.error(f"Erro ao processar o kernel: {e}")
-
-            # Adicionar operação ao pipeline
-            if st.sidebar.button("Adicionar operação"):
-                st.session_state.pipeline.append(("Filtro Personalizado", kernel))
 
     elif tipo == "Segmentação":
         # Opções de segmentação
@@ -219,6 +191,76 @@ if uploaded_file is not None:
         # Adicionar operação ao pipeline
         if st.sidebar.button("Adicionar operação"):
             st.session_state.pipeline.append(("Seleção de Objetos", op))
+    
+    elif tipo == "Ruídos":
+        op = st.sidebar.selectbox(
+            "Ruídos",
+            ["Gaussiano", "Sal e Pimenta", "Poisson", "Speckle", "Uniforme"]
+        )
+        
+        # Preview
+        preview_img = adicionar_ruido(entrada_atual, op)
+        show_image(preview_img, f"Preview: Ruído ({op})", cmap="gray")
+        st.download_button(
+            "📥 Baixar Preview Ruído",
+            data=convert_for_download(preview_img),
+            file_name=f"ruido_{op}.png",
+            mime="image/png"
+        )
+
+        # Adicionar operação ao pipeline
+        if st.sidebar.button("Adicionar operação"):
+            st.session_state.pipeline.append(("Ruídos", op))
+
+    elif tipo == "Outros Filtros":
+        op = st.sidebar.selectbox(
+            "Outros Filtros",
+            ["Filtro Negativo", "Filtro Personalizado"]
+        )
+
+        if op == "Filtro Negativo":
+            # Preview do filtro negativo
+            preview_img = filtro_negativo(entrada_atual)
+            show_image(preview_img, "Preview: Filtro Negativo", cmap="gray")
+            st.download_button(
+                "📥 Baixar Preview Filtro Negativo",
+                data=convert_for_download(preview_img),
+                file_name="filtro_negativo.png",
+                mime="image/png"
+            )
+
+            # Adicionar operação ao pipeline
+            if st.sidebar.button("Adicionar operação"):
+                st.session_state.pipeline.append(("Filtro Negativo", None))
+
+        elif op == "Filtro Personalizado":
+            # Filtro personalizado
+            st.sidebar.subheader("Filtro Personalizado")
+            kernel = st.sidebar.text_area("Insira o kernel", value="", placeholder="[[1, 0, -1], [1, 0, -1], [1, 0, -1]]")
+            
+            if not kernel:
+                st.error("Por favor, insira um kernel válido.")
+            else:
+                try:
+                    kernel = eval(kernel)  # Avalia a string como uma lista de listas
+                    if isinstance(kernel, list) and all(isinstance(row, list) for row in kernel):
+                        preview_img = filtro_personalizado(entrada_atual, kernel)
+                        show_image(preview_img, "Preview: Filtro Personalizado", cmap="gray")
+                        st.download_button(
+                            "📥 Baixar Preview Filtro Personalizado",
+                            data=convert_for_download(preview_img),
+                            file_name="filtro_personalizado.png",
+                            mime="image/png"
+                        )
+                    else:
+                        st.error("O kernel deve ser uma lista de listas.")
+                except Exception as e:
+                    st.error(f"Erro ao processar o kernel: {e}")
+
+                # Adicionar operação ao pipeline
+                if st.sidebar.button("Adicionar operação"):
+                    st.session_state.pipeline.append(("Filtro Personalizado", kernel))
+
 
 
 
@@ -251,18 +293,39 @@ if uploaded_file is not None:
             img = morfologia(img, op[1])
         elif op[0] == "Seleção de Objetos":
             img = selecionar_objeto(img, op[1])
+        elif op[0] == "Ruídos":
+            img = adicionar_ruido(img, op[1])
+        elif op[0] == "Filtro Negativo":
+            img = filtro_negativo(img)
         elif op[0] == "Filtro Personalizado":
-            img = filtro_personalizado(img, op[1])
+            if op[1] is not None:
+                img = filtro_personalizado(img, op[1])
+            else:
+                st.error("Filtro personalizado não possui kernel definido.")
+
     # Atualizar a imagem de entrada atual no estado da sessão
     st.session_state.entrada_atual = img
 
-    show_image(img, "Resultado do Pipeline", cmap="gray")
-    st.download_button(
-        "📥 Baixar Resultado do Pipeline",
-        data=convert_for_download(img),
-        file_name="resultado_pipeline.png",
-        mime="image/png"
-    )
+    col5, col6 = st.columns(2)
+
+    with col5:
+        # Exibir imagem resultante do pipeline
+        show_image(img, "Imagem Resultante do Pipeline", cmap="gray")
+        st.download_button(
+            "📥 Baixar Imagem Resultante do Pipeline",
+            data=convert_for_download(img),
+            file_name="resultado_pipeline.png",
+            mime="image/png"
+        )
+    with col6:
+        # Exibir histograma da imagem resultante
+        hist_result = plot_histogram(img, "Histograma da Imagem Resultante", normalized=True)
+        st.download_button(
+            "📥 Baixar Histograma da Imagem Resultante",
+            data=convert_for_download(hist_result),
+            file_name="histograma_resultado.png",
+            mime="image/png"
+        )
 
     #Aplicar máscara na imagem original
     if st.button("Aplicar Máscara na Imagem Original"):
