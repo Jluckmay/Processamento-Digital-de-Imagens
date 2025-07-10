@@ -33,29 +33,31 @@ def ruido_sal_pimenta(img, probabilidade=0.05):
     return img_ruidosa
 
 # Função para adicionar ruído de Poisson
-def ruido_poisson(img):
+def ruido_poisson(img, intensidade=30):
     """
     Adiciona ruído de Poisson à imagem.
     Args:
         img (numpy.ndarray): Imagem em formato RGB ou escala de cinza.
+        intensidade (float): Intensidade do ruído de Poisson.
     Returns:
         numpy.ndarray: Imagem resultante após a adição do ruído de Poisson.
     """
-    ruido = np.random.poisson(img / 255.0 * 30.0) / 30.0 * 255.0
+    ruido = np.random.poisson(img / 255.0 * intensidade) / intensidade * 255.0
     img_ruidosa = img.astype(np.float32) + ruido
     img_ruidosa = np.clip(img_ruidosa, 0, 255).astype(np.uint8)
     return img_ruidosa
 
 # Função para adicionar ruído speckle
-def ruido_speckle(img):
+def ruido_speckle(img, intensidade=0.1):
     """
     Adiciona ruído speckle à imagem.
     Args:
         img (numpy.ndarray): Imagem em formato RGB ou escala de cinza.
+        intensidade (float): Intensidade do ruído speckle.
     Returns:
         numpy.ndarray: Imagem resultante após a adição do ruído speckle.
     """
-    ruido = np.random.randn(*img.shape) * 0.1 * img
+    ruido = np.random.randn(*img.shape) * intensidade * img
     img_ruidosa = img.astype(np.float32) + ruido
     img_ruidosa = np.clip(img_ruidosa, 0, 255).astype(np.uint8)
     return img_ruidosa
@@ -74,16 +76,18 @@ def ruido_quantizacao(img, n_bits=8):
     return (img // quantization_levels) * quantization_levels + quantization_levels // 2
 
 # Função para adicionar ruido uniforme
-def ruido_uniforme(img, amplitude=10):
+def ruido_uniforme(img, min_val=0, max_val=255):
     """
     Adiciona ruído uniforme à imagem.
     Args:
         img (numpy.ndarray): Imagem em formato RGB ou escala de cinza.
-        amplitude (int): Amplitude do ruído uniforme.
+        min_val (int): Valor mínimo do ruído uniforme.
+        max_val (int): Valor máximo do ruído uniforme.
     Returns:
         numpy.ndarray: Imagem resultante após a adição do ruído uniforme.
     """
-    ruido = np.random.uniform(-amplitude, amplitude, img.shape)
+    ruido = np.random.uniform(min_val, max_val, img.shape)
+    ruido = ruido.astype(np.float32)
     img_ruidosa = img.astype(np.float32) + ruido
     img_ruidosa = np.clip(img_ruidosa, 0, 255).astype(np.uint8)
     return img_ruidosa

@@ -181,11 +181,35 @@ if uploaded_file is not None:
     elif tipo == "Ruídos":
         op = st.sidebar.selectbox(
             "Ruídos",
-            ["Gaussiano", "Sal e Pimenta", "Poisson", "Speckle", "Uniforme"]
+            ["Gaussiano", "Sal e Pimenta", "Poisson", "Speckle", "Uniforme", "Quantização"]
         )
+
+        op_params = {}
+
+        # Parâmetros adicionais para ruídos
+        if op == "Gaussiano":
+            media = st.sidebar.slider("Média do Ruído Gaussiano", -50, 50, 0)
+            sigma = st.sidebar.slider("Desvio Padrão do Ruído Gaussiano", 1, 100, 10)
+            op_params = {"media": media, "sigma": sigma}
+        elif op == "Sal e Pimenta":
+            probabilidade = st.sidebar.slider("Probabilidade de Ruído Sal e Pimenta", 0.0, 1.0, 0.05)
+            op_params = {"probabilidade": probabilidade}
+        elif op == "Uniforme":
+            min_val = st.sidebar.slider("Valor Mínimo do Ruído Uniforme", 0, 255, 0)
+            max_val = st.sidebar.slider("Valor Máximo do Ruído Uniforme", 0, 255, 255)
+            op_params = {"min_val": min_val, "max_val": max_val}
+        elif op == "Quantização":
+            n_bits = st.sidebar.slider("Número de Bits para Quantização", 1, 8, 4)
+            op_params = {"n_bits": n_bits}
+        elif op == "Poisson":
+            intensidade = st.sidebar.slider("Intensidade do Ruído de Poisson", 1, 100, 30)
+            op_params = {"intensidade": intensidade}
+        elif op == "Speckle":
+            intensidade = st.sidebar.slider("Intensidade do Ruído Speckle", 0.0, 1.0, 0.1)
+            op_params = {"intensidade": intensidade}
         
         # Preview
-        preview_img = adicionar_ruido(entrada_atual, op)
+        preview_img = adicionar_ruido(entrada_atual, op, **op_params)
         show_image(preview_img, f"Preview: Ruído ({op})", cmap="gray")
         st.download_button(
             "📥 Baixar Preview Ruído",
