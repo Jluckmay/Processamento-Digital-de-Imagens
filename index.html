@@ -236,6 +236,22 @@
         let fourierComplexData = null;
         let fourierImageSize = 0;
 
+        // Dicionário de filtros espaciais
+        const SPATIAL_KERNELS = {
+            // Filtros Passa-Baixa
+            average: [[1/9, 1/9, 1/9], [1/9, 1/9, 1/9], [1/9, 1/9, 1/9]],
+            gaussian: [[1/16, 2/16, 1/16], [2/16, 4/16, 2/16], [1/16, 2/16, 1/16]],
+            
+            // Filtros Passa-Alta
+            laplacian: [[0, 1, 0], [1, -4, 1], [0, 1, 0]],
+            sobel_x: [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]], 
+            sobel_y: [[-1, -2, -1], [0, 0, 0], [1, 2, 1]],
+            prewitt_x: [[-1, 0, 1], [-1, 0, 1], [-1, 0, 1]],
+            prewitt_y: [[-1, -1, -1], [0, 0, 0], [1, 1, 1]],
+            roberts_x: [[1, 0], [0, -1]],
+            roberts_y: [[0, 1], [-1, 0]]
+        };
+
         // DOM Elements
         const imageUpload = document.getElementById('imageUpload' );
         const processingArea = document.getElementById('processingArea');
@@ -841,14 +857,24 @@
             let optionsHTML = '';
 
             switch (type) {
-                case 'fourier_filter':
+                 case 'fourier_filter':
                     optionsHTML = `
                         <div class="mb-4">
                             <label for="fourierFilterType" class="block text-sm font-medium mb-2">Tipo de Filtro:</label>
                             <select id="fourierFilterType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
-                                <option value="lowpass">Passa-Baixa Ideal</option>
-                                <option value="highpass">Passa-Alta Ideal</option>
-                                <option value="custom_kernel">Kernel Espacial (via Frequência)</option>
+                                <optgroup label="Filtros Ideais">
+                                    <option value="lowpass">Passa-Baixa Ideal</option>
+                                    <option value="highpass">Passa-Alta Ideal</option>
+                                </optgroup>
+                                <optgroup label="Filtros Espaciais (via Frequência)">
+                                    <option value="kernel_average">Média 3x3</option>
+                                    <option value="kernel_gaussian">Gaussiano 3x3</option>
+                                    <option value="kernel_laplacian">Laplaciano</option>
+                                    <option value="kernel_sobel_combined">Sobel (Magnitude Total)</option>
+                                    <option value="kernel_prewitt_combined">Prewitt (Magnitude Total)</option>
+                                    <option value="kernel_roberts_combined">Roberts (Magnitude Total)</option>
+                                    <option value="custom_kernel">Kernel Personalizado (Textarea)</option>
+                                </optgroup>
                             </select>
                         </div>
                         <div id="fourierOptionsContainer">
@@ -856,7 +882,6 @@
                         </div>
                     `;
                     break;
-                // ... Seus outros cases (lowpass, highpass, noise, etc.) permanecem aqui ...
                 case 'lowpass':
                     optionsHTML = `
                         <div class="mb-4">
@@ -973,18 +998,21 @@
                 const filterType = document.getElementById('fourierFilterType').value;
                 let fourierOptionsHTML = '';
 
-                if (filterType === 'custom_kernel') {
-                    fourierOptionsHTML = `
-                        <div class="mb-4">
-                            <label for="fourierKernelText" class="block text-sm font-medium mb-2">Insira o Kernel Espacial:</label>
-                            <textarea id="fourierKernelText" rows="3" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg block w-full p-2.5" placeholder="[[1, 2, 1], [2, 4, 2], [1, 2, 1]]"></textarea>
-                        </div>
-                    `;
-                } else { // lowpass ou highpass
+                // Verifica o tipo de filtro para decidir qual UI mostrar.
+                if (filterType === 'lowpass' || filterType === 'highpass') {
+                    // Mostra o slider APENAS para filtros ideais.
                     fourierOptionsHTML = `
                         <div class="mb-4">
                             <label for="fourierCutoff" class="block text-sm font-medium mb-2">Raio de Corte (D₀): <span id="fourierCutoffDisplay">30</span></label>
                             <input type="range" id="fourierCutoff" min="1" max="128" value="30" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    `;
+                } else if (filterType === 'custom_kernel') {
+                    // Mostra a textarea APENAS para o kernel personalizado.
+                    fourierOptionsHTML = `
+                        <div class="mb-4">
+                            <label for="fourierKernelText" class="block text-sm font-medium mb-2">Insira o Kernel Espacial:</label>
+                            <textarea id="fourierKernelText" rows="3" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg block w-full p-2.5" placeholder="[[1]]">[[1]]</textarea>
                         </div>
                     `;
                 }
@@ -1075,14 +1103,117 @@
 
                     case 'fourier_filter':
                         const spectrum = calculateFourierSpectrum(image, false);
-                        
-                        if (operation.subtype === 'custom_kernel') {
-                            // Lógica para o filtro de kernel (convolução), que já funciona.
-                            let kernel;
-                            try { kernel = JSON.parse(operation.kernel); } catch (e) { kernel = [[1]]; }
-                            const maskComplex = createFourierMask(operation.subtype, spectrum.width, 0, kernel);
+                        const { width, height } = spectrum;
 
-                            // Multiplicação de números complexos.
+                        // [NOVO] Bloco especial para filtros combinados
+                        if (operation.subtype === 'kernel_sobel_combined') {
+                            // 1. Pega as FFTs dos dois kernels (X e Y)
+                            const maskComplexX = createFourierMask('kernel_sobel_x', width, 0);
+                            const maskComplexY = createFourierMask('kernel_sobel_y', width, 0);
+
+                            // 2. Calcula Gx e Gy no domínio da frequência
+                            const Gx_freq = spectrum.complexData.map((pixel, i) => {
+                                const a = pixel;
+                                const b = maskComplexX[i];
+                                const re = a.re * b.re - a.im * b.im;
+                                const im = a.re * b.im + a.im * b.re;
+                                return { re, im };
+                            });
+
+                            // Calcula Gy com a máscara Y
+                            const Gy_freq = spectrum.complexData.map((pixel, i) => {
+                                const a = pixel;
+                                const b = maskComplexY[i];
+                                const re = a.re * b.re - a.im * b.im;
+                                const im = a.re * b.im + a.im * b.re;
+                                return { re, im };
+                            });
+
+                            // 3. Traz Gx e Gy de volta para o domínio do espaço
+                            ifft2d(Gx_freq, width, height);
+                            ifft2d(Gy_freq, width, height);
+
+                            // 4. Combina a magnitude no domínio do espaço
+                            const finalImageData = new Float32Array(width * height);
+                            for (let i = 0; i < finalImageData.length; i++) {
+                                const gx = Gx_freq[i].re; // Após a IFFT, o resultado está na parte real
+                                const gy = Gy_freq[i].re;
+                                const magnitude = Math.sqrt(gx * gx + gy * gy);
+                                finalImageData[i] = magnitude;
+                            }
+                            
+                            // 5. Retorna a imagem da magnitude
+                            return createImageFromData(finalImageData, width, height);
+
+                        } else if (operation.subtype === 'kernel_prewitt_combined') {
+                            // Lógica para o filtro Prewitt combinado (que já funciona)
+                            const maskComplexX = createFourierMask('kernel_prewitt_x', width, 0);
+                            const maskComplexY = createFourierMask('kernel_prewitt_y', width, 0);
+
+                            const Gx_freq = spectrum.complexData.map((pixel, i) => {
+                                const a = pixel;
+                                const b = maskComplexX[i];
+                                const re = a.re * b.re - a.im * b.im;
+                                const im = a.re * b.im + a.im * b.re;
+                                return { re, im };
+                            });
+
+                            const Gy_freq = spectrum.complexData.map((pixel, i) => {
+                                const a = pixel;
+                                const b = maskComplexY[i];
+                                const re = a.re * b.re - a.im * b.im;
+                                const im = a.re * b.im + a.im * b.re;
+                                return { re, im };
+                            });
+
+                            ifft2d(Gx_freq, width, height);
+                            ifft2d(Gy_freq, width, height);
+
+                            const finalImageData = new Float32Array(width * height);
+                            for (let i = 0; i < finalImageData.length; i++) {
+                                const gx = Gx_freq[i].re; // Após a IFFT, o resultado está na parte real
+                                const gy = Gy_freq[i].re;
+                                finalImageData[i] = Math.sqrt(gx * gx + gy * gy);
+                            }
+                            
+                            return createImageFromData(finalImageData, width, height);
+
+                        } else if (operation.subtype === 'kernel_roberts_combined') {
+                            // Lógica para o filtro Roberts combinado (que já funciona)
+                            const maskComplexX = createFourierMask('kernel_roberts_x', width, 0);
+                            const maskComplexY = createFourierMask('kernel_roberts_y', width, 0);
+
+                            const Gx_freq = spectrum.complexData.map((pixel, i) => {
+                                const a = pixel;
+                                const b = maskComplexX[i];
+                                const re = a.re * b.re - a.im * b.im;
+                                const im = a.re * b.im + a.im * b.re;
+                                return { re: re, im: im };
+                            });
+                            const Gy_freq = spectrum.complexData.map((pixel, i) => {
+                                const a = pixel;
+                                const b = maskComplexY[i];
+                                const re = a.re * b.re - a.im * b.im;
+                                const im = a.re * b.im + a.im * b.re;
+                                return { re: re, im: im };
+                            });
+                            ifft2d(Gx_freq, width, height);
+                            ifft2d(Gy_freq, width, height);
+                            const finalImageData = new Float32Array(width * height);
+                            for (let i = 0; i < finalImageData.length; i++) {
+                                const gx = Gx_freq[i].re; // Após a IFFT, o resultado está na parte real
+                                const gy = Gy_freq[i].re;
+                                finalImageData[i] = Math.sqrt(gx * gx + gy * gy);
+                            }
+                            return createImageFromData(finalImageData, width, height);
+                        }
+                        else if (operation.subtype.startsWith('kernel_') || operation.subtype === 'custom_kernel') {
+                            // Lógica para os outros filtros de kernel (que já funciona)
+                            let kernel;
+                            if (operation.subtype === 'custom_kernel') {
+                                try { kernel = JSON.parse(operation.kernel); } catch (e) { kernel = [[1]]; }
+                            }
+                            const maskComplex = createFourierMask(operation.subtype, width, 0, kernel);
                             for (let i = 0; i < spectrum.complexData.length; i++) {
                                 const a = spectrum.complexData[i];
                                 const b = maskComplex[i];
@@ -1090,27 +1221,20 @@
                                 const im = a.re * b.im + a.im * b.re;
                                 spectrum.complexData[i] = { re, im };
                             }
-                        } else { // Lógica para filtros ideais (lowpass/highpass).
-                            // [CORREÇÃO CHAVE]
-                            // 1. Centraliza o espectro da imagem.
-                            const shiftedSpectrum = fftShift(spectrum.complexData, spectrum.width, spectrum.height);
-                            
-                            // 2. Cria a máscara ideal (que é um array simples de 0s e 1s).
-                            const maskIdeal = createFourierMask(operation.subtype, spectrum.width, operation.cutoff);
-
-                            // 3. Aplica a máscara simples. Multiplica tanto a parte real quanto a imaginária pelo mesmo valor (0 ou 1).
+                        } else { 
+                            // Lógica para filtros ideais (que já funciona)
+                            const shiftedSpectrum = fftShift(spectrum.complexData, width, height);
+                            const maskIdeal = createFourierMask(operation.subtype, width, operation.cutoff);
                             for (let i = 0; i < shiftedSpectrum.length; i++) {
                                 shiftedSpectrum[i].re *= maskIdeal[i];
                                 shiftedSpectrum[i].im *= maskIdeal[i];
                             }
-                            
-                            // 4. Desfaz o shift para preparar para a IFFT.
-                            spectrum.complexData = fftShift(shiftedSpectrum, spectrum.width, spectrum.height);
+                            spectrum.complexData = fftShift(shiftedSpectrum, width, height);
                         }
 
-                        // Aplica a IFFT e retorna a imagem espacial.
-                        ifft2d(spectrum.complexData, spectrum.width, spectrum.height);
-                        return createImageFromComplexData(spectrum.complexData, spectrum.width);
+                        // Este bloco só será executado para os filtros não-combinados
+                        ifft2d(spectrum.complexData, width, height);
+                        return createImageFromComplexData(spectrum.complexData, width);
                     case 'inverse_fourier_transform':
                         return applyInverseFourierTransform();
 
@@ -1156,30 +1280,48 @@
 
         // Função para criar uma máscara de Fourier (passa-baixa ou passa-alta)
         function createFourierMask(type, size, cutoff, kernel) {
+            // Verifica se o tipo de filtro é um dos nossos kernels predefinidos.
+            if (type.startsWith('kernel_')) {
+                const kernelName = type.replace('kernel_', '');
+                const selectedKernel = SPATIAL_KERNELS[kernelName];
+                
+                const kernelImage = new Array(size * size).fill(0);
+                const kHeight = selectedKernel.length;
+                const kWidth = selectedKernel[0].length;
+                // ... (o resto da lógica de padding e FFT do kernel é a mesma)
+                for (let y = 0; y < kHeight; y++) {
+                    for (let x = 0; x < kWidth; x++) {
+                        const imgX = (x - Math.floor(kWidth / 2) + size) % size;
+                        const imgY = (y - Math.floor(kHeight / 2) + size) % size;
+                        kernelImage[imgY * size + imgX] = selectedKernel[y][x];
+                    }
+                }
+                const complexKernel = kernelImage.map(val => ({ re: val, im: 0 }));
+                fft2d(complexKernel, size, size);
+                return complexKernel;
+            }
+            
             if (type === 'custom_kernel') {
-                // A lógica para o kernel já está correta.
+                // A lógica para o kernel personalizado da textarea permanece a mesma.
                 const kernelImage = new Array(size * size).fill(0);
                 const kHeight = kernel.length;
                 const kWidth = kernel[0].length;
-                const kCenterY = Math.floor(kHeight / 2);
-                const kCenterX = Math.floor(kWidth / 2);
-
+                // ... (lógica de padding e FFT do kernel personalizado)
                 for (let y = 0; y < kHeight; y++) {
                     for (let x = 0; x < kWidth; x++) {
-                        const imgX = (x - kCenterX + size) % size;
-                        const imgY = (y - kCenterY + size) % size;
+                        const imgX = (x - Math.floor(kWidth / 2) + size) % size;
+                        const imgY = (y - Math.floor(kHeight / 2) + size) % size;
                         kernelImage[imgY * size + imgX] = kernel[y][x];
                     }
                 }
-                
                 const complexKernel = kernelImage.map(val => ({ re: val, im: 0 }));
                 fft2d(complexKernel, size, size);
-                return complexKernel; // Retorna os dados complexos do kernel transformado.
+                return complexKernel;
             } 
             
-            // [CORREÇÃO CHAVE] Lógica para filtros ideais (passa-baixa/alta).
-            // Agora retorna um array simples de 0s e 1s, não um array de objetos complexos.
+            // Lógica para filtros ideais (passa-baixa/alta).
             const mask = new Float32Array(size * size);
+            // ... (o resto da função permanece o mesmo)
             const centerX = size / 2;
             const centerY = size / 2;
             for (let y = 0; y < size; y++) {
@@ -1189,7 +1331,7 @@
                     mask[y * size + x] = pass ? 1 : 0;
                 }
             }
-            return mask; // Retorna o array simples.
+            return mask;
         }
 
         // Função para aplicar a máscara aos dados complexos da FFT
@@ -1244,49 +1386,70 @@
             const operation = { type };
             switch (type) {
                 case 'fourier_filter':
-                    operation.subtype = document.getElementById('fourierFilterType').value;
-                    
-                    // [NOVO] Adiciona a lógica para ler o controle correto.
-                    if (operation.subtype === 'custom_kernel') {
-                        const kernelText = document.getElementById('fourierKernelText').value;
-                        // Adiciona uma verificação para garantir que o kernel seja válido antes de tentar usá-lo.
-                        try {
-                            JSON.parse(kernelText); // Apenas para validar o JSON
-                            operation.kernel = kernelText;
-                        } catch (e) {
-                            operation.kernel = "[[1]]"; // Fallback para um kernel que não faz nada
+                    const fourierFilterTypeSelect = document.getElementById('fourierFilterType');
+                    if (fourierFilterTypeSelect) {
+                        operation.subtype = fourierFilterTypeSelect.value;
+
+                        // [CORREÇÃO CHAVE]
+                        // Só tenta ler os parâmetros se eles forem relevantes para o subtipo selecionado.
+                        if (operation.subtype === 'lowpass' || operation.subtype === 'highpass') {
+                            const cutoffSlider = document.getElementById('fourierCutoff');
+                            if (cutoffSlider) {
+                                operation.cutoff = parseInt(cutoffSlider.value);
+                            }
+                        } else if (operation.subtype === 'custom_kernel') {
+                            const kernelText = document.getElementById('fourierKernelText');
+                            if (kernelText) {
+                                // Apenas armazena o texto; a validação ocorre em processSingleOperation.
+                                operation.kernel = kernelText.value;
+                            }
                         }
-                    } else {
-                        operation.cutoff = parseInt(document.getElementById('fourierCutoff').value);
+                        // Para os outros filtros de kernel (Média, Gaussiano, etc.), não há parâmetros para ler.
                     }
                     break;
+
                 case 'noise':
-                    operation.subtype = document.getElementById('noiseType').value;
-                    const paramElement = operation.subtype === 'quantization' ? 
-                        document.getElementById('quantizationLevels') : 
-                        document.getElementById('noiseAmount');
-                    if (paramElement) operation.parameter = parseInt(paramElement.value);
+                    const noiseTypeSelect = document.getElementById('noiseType');
+                    if (noiseTypeSelect) {
+                        operation.subtype = noiseTypeSelect.value;
+                        const paramElement = operation.subtype === 'quantization' ? 
+                            document.getElementById('quantizationLevels') : 
+                            document.getElementById('noiseAmount');
+                        if (paramElement) operation.parameter = parseInt(paramElement.value);
+                    }
                     break;
-                case 'lowpass':
-                    operation.subtype = document.getElementById('lowpassType').value;
-                    break;
+
                 case 'highpass':
-                    operation.subtype = document.getElementById('highpassType').value;
+                    const highpassTypeSelect = document.getElementById('highpassType');
+                    if (highpassTypeSelect) operation.subtype = highpassTypeSelect.value;
+                    break;
+                    
+                // ... O resto dos seus cases (lowpass, segmentation, etc.) permanece o mesmo ...
+                case 'lowpass':
+                    const lowpassTypeSelect = document.getElementById('lowpassType');
+                    if (lowpassTypeSelect) operation.subtype = lowpassTypeSelect.value;
                     break;
                 case 'segmentation':
-                    operation.subtype = document.getElementById('segmentationType').value;
-                    if (operation.subtype === 'simple' || operation.subtype === 'iterative') {
-                        operation.threshold = parseInt(document.getElementById('thresholdValue').value);
+                    const segmentationTypeSelect = document.getElementById('segmentationType');
+                    if(segmentationTypeSelect) {
+                        operation.subtype = segmentationTypeSelect.value;
+                        if (operation.subtype === 'simple' || operation.subtype === 'iterative') {
+                            const thresholdSlider = document.getElementById('thresholdValue');
+                            if(thresholdSlider) operation.threshold = parseInt(thresholdSlider.value);
+                        }
                     }
                     break;
                 case 'morphology':
-                    operation.subtype = document.getElementById('morphologyType').value;
+                    const morphologyTypeSelect = document.getElementById('morphologyType');
+                    if(morphologyTypeSelect) operation.subtype = morphologyTypeSelect.value;
                     break;
                 case 'object':
-                    operation.subtype = document.getElementById('objectType').value;
+                    const objectTypeSelect = document.getElementById('objectType');
+                    if(objectTypeSelect) operation.subtype = objectTypeSelect.value;
                     break;
                 case 'custom':
-                    operation.kernel = document.getElementById('customKernel').value;
+                    const customKernelText = document.getElementById('customKernel');
+                    if(customKernelText) operation.kernel = customKernelText.value;
                     break;
             }
             return operation;
