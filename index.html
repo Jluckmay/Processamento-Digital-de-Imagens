@@ -1,0 +1,2932 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Processamento de Imagem com Histograma</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        .image-container {
+            width: 100%;
+            height: 300px;
+            border: 1px solid #4b5563;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            background-color: #1f2937;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .image-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+        
+        .histogram-container {
+            width: 100%;
+            height: 200px;
+            background-color: #1f2937;
+            border-radius: 0.5rem;
+        }
+        
+        .operation-item {
+            border-left: 3px solid #6b7280;
+            padding-left: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        
+        .dark-background {
+            background-color: #111827;
+            color: white;
+        }
+    </style>
+</head>
+
+<body class="dark-background min-h-screen p-4">
+    <div class="max-w-7xl mx-auto">
+        <h1 class="text-3xl font-bold text-center mb-8 text-purple-400">Processamento de Imagem com Histograma</h1>
+
+        <!-- Upload Section -->
+        <div class="mb-8 p-4 bg-gray-800 rounded-lg">
+            <h2 class="text-xl font-semibold mb-4">Envie uma imagem</h2>
+            <input type="file" id="imageUpload" accept="image/png, image/jpeg, image/jpg" class="block w-full text-sm text-gray-400
+                file:mr-4 file:py-2 file:px-4
+                file:rounded-md file:border-0
+                file:text-sm file:font-semibold
+                file:bg-purple-600 file:text-white
+                hover:file:bg-purple-700
+                cursor-pointer
+            " />
+        </div>
+
+        <div id="processingArea" class="hidden">
+            <!-- Original Images Section -->
+            <div class="mb-8">
+                <h2 class="text-2xl font-bold mb-4 text-center">Imagens Originais</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                    <div class="p-4 bg-gray-800 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Imagem Original (RGB)</h3>
+                        <div class="image-container">
+                            <img id="originalImage" src="" alt="Original Image">
+                        </div>
+                        <button id="downloadOriginal" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full">
+                            📥 Baixar Imagem Original
+                        </button>
+                    </div>
+                    <div class="p-4 bg-gray-800 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Imagem em Tons de Cinza</h3>
+                        <div class="image-container">
+                            <img id="grayImage" src="" alt="Gray Image">
+                        </div>
+                        <button id="downloadGray" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full">
+                            📥 Baixar Imagem Cinza
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Histograms Section -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                    <div class="p-4 bg-gray-800 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Histograma Original (Tons de Cinza)</h3>
+                        <div class="histogram-container">
+                            <canvas id="originalHistogram"></canvas>
+                        </div>
+                        <button id="downloadHistogram" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full">
+                            📥 Baixar Histograma Original
+                        </button>
+                    </div>
+                    <div class="p-4 bg-gray-800 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-2">Histograma Normalizado</h3>
+                        <div class="histogram-container">
+                            <canvas id="normalizedHistogram"></canvas>
+                        </div>
+                        <button id="downloadNormalizedHist" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full">
+                            📥 Baixar Histograma Normalizado
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Image Descriptor Section -->
+            <div class="mb-8 p-4 bg-gray-800 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">Descritor de Imagem</h2>
+                <div class="mb-4">
+                    <label for="descriptorSelect" class="block text-sm font-medium mb-2">Escolha um descritor:</label>
+                    <select id="descriptorSelect" class="bg-gray-700 border border-gray-600 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                        <option value="none">Nenhum</option>
+                        <option value="color">Cor</option>
+                        <option value="shape">Forma</option>
+                        <option value="texture">Textura</option>
+                    </select>
+                </div>
+                <div id="descriptorResults" class="mt-4"></div>
+            </div>
+            <canvas id="lbpImage"> </canvas>
+            <button id = "lbpImageButton" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full hidden">📥Baixar Histograma LBP</button>
+
+
+            <!-- Processing Operations -->
+            <div class="mb-8 p-4 bg-gray-800 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">Operações de Processamento de Imagem</h2>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Operation Selection -->
+                    <div class="p-4 bg-gray-700 rounded-lg">
+                        <h3 class="text-lg font-semibold mb-4">Selecione uma operação</h3>
+
+                        <div class="mb-4">
+                            <label for="operationType" class="block text-sm font-medium mb-2">Tipo de Operação:</label>
+                            <select id="operationType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="none">Nenhum</option>
+                                <optgroup label="Domínio do Espaço">
+                                    <option value="lowpass">Filtro Passa-Baixa</option>
+                                    <option value="highpass">Filtro Passa-Alta</option>
+                                    <option value="custom">Filtro Personalizado</option>
+                                </optgroup>
+                                <optgroup label="Domínio da Frequência">
+                                    <option value="fourier_transform">Transformada de Fourier (Visualizar)</option>
+                                    <option value="fourier_filter">Filtro de Fourier</option>
+                                    <option value="inverse_fourier_transform">Transformada Inversa (Voltar ao Espacial)</option>
+                                </optgroup>
+                                <option value="segmentation">Segmentação</option>
+                                <option value="morphology">Morfologia</option>
+                                <option value="object">Seleção de Objetos</option>
+                                <option value="noise">Ruído</option>
+                                <option value="negative">Negativo</option>
+                            </select>
+                        </div>
+
+                        <!-- Operation Options -->
+                        <div id="operationOptions"></div>
+
+                        <button id="addOperation" class="mt-4 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md w-full">
+                            Adicionar operação
+                        </button>
+                    </div>
+
+                    <!-- Preview Section -->
+                    <div class="p-4 bg-gray-700 rounded-lg hidden" id="previewSection">
+                        <h3 class="text-lg font-semibold mb-2">Preview</h3>
+                        <div class="image-container">
+                            <img id="previewImage" src="" alt="Operation Preview">
+                        </div>
+                        <button id="downloadPreview" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full">
+                            📥 Baixar Preview
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pipeline Section -->
+            <div class="mb-8 p-4 bg-gray-800 rounded-lg">
+                <h2 class="text-2xl font-bold mb-4">Pipeline de Operações</h2>
+
+                <div id="pipelineOperations" class="mb-4">
+                    <p class="text-gray-400">Nenhuma operação adicionada ainda.</p>
+                </div>
+
+                <button id="clearPipeline" class="bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-md mr-2">
+                    Limpar Pipeline
+                </button>
+
+                <div class="mt-4 hidden" id="pipelineResultSection">
+                    <div class="image-container">
+                        <img id="pipelineResult" src="" alt="Pipeline Result">
+                    </div>
+                    <button id="downloadPipelineResult" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full">
+                        📥 Baixar Resultado do Pipeline
+                    </button>
+                </div>
+            </div>
+
+            <!-- Apply Mask Section -->
+            <div class="mb-8 p-4 bg-gray-800 rounded-lg" id="applyMaskSection">
+                <h2 class="text-2xl font-bold mb-4">Aplicar Máscara na Imagem Original</h2>
+                <button id="applyMask" class="bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md">
+                    Aplicar Máscara na Imagem Original
+                </button>
+
+                <div class="mt-4 hidden" id="maskedImageSection">
+                    <div class="image-container">
+                        <img id="maskedImage" src="" alt="Masked Image" src="https://storage.googleapis.com/workspace-0f70711f-8b4e-4d94-86f1-2a93ccde5887/image/1af2a95a-9d55-4706-92b8-c0723fcdd3c6.png">
+                    </div>
+                    <button id="downloadMasked" class="mt-2 bg-purple-600 hover:bg-purple-700 text-white py-2 px-4 rounded-md w-full">
+                        📥 Baixar Imagem com Máscara Aplicada
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+         // Global variables
+        let originalImage = null;
+        let grayImage = null;
+        let currentImage = null;
+        let pipeline = [];
+        let originalHistogramChart = null;
+        let normalizedHistogramChart = null;
+        let lbpImageChart = null;
+
+        // Variável global para armazenar os dados da FFT
+        let fourierComplexData = null;
+        let fourierImageSize = 0;
+
+        // DOM Elements
+        const imageUpload = document.getElementById('imageUpload' );
+        const processingArea = document.getElementById('processingArea');
+        const originalImageEl = document.getElementById('originalImage');
+        const grayImageEl = document.getElementById('grayImage');
+        const previewImageEl = document.getElementById('previewImage');
+        const pipelineResultEl = document.getElementById('pipelineResult');
+        const maskedImageEl = document.getElementById('maskedImage');
+        const fourierImageEl = document.getElementById('fourierImage');
+        const operationType = document.getElementById('operationType');
+        const operationOptions = document.getElementById('operationOptions');
+        const pipelineOperations = document.getElementById('pipelineOperations');
+        const descriptorSelect = document.getElementById('descriptorSelect');
+        const descriptorResults = document.getElementById('descriptorResults');
+        const lbpImage = document.getElementById('lbpImage');
+        const originalHistogramCanvas = document.getElementById('originalHistogram');
+        const normalizedHistogramCanvas = document.getElementById('normalizedHistogram');
+        
+        // Set up event listeners
+        imageUpload.addEventListener('change', handleImageUpload);
+        operationType.addEventListener('change', updateOperationOptions);
+        document.getElementById('addOperation').addEventListener('click', addOperationToPipeline);
+        document.getElementById('clearPipeline').addEventListener('click', clearPipeline);
+        document.getElementById('applyMask').addEventListener('click', applyMaskToOriginal);
+        descriptorSelect.addEventListener('change', updateDescriptorResults);
+
+        // Download buttons
+        document.getElementById('downloadOriginal').addEventListener('click', () => downloadImage(originalImage, 'imagem_rgb.png'));
+        document.getElementById('downloadGray').addEventListener('click', () => downloadImage(grayImage, 'imagem_gray.png'));
+        document.getElementById('downloadPreview').addEventListener('click', () => downloadImage(previewImageEl, 'preview.png'));
+        document.getElementById('downloadPipelineResult').addEventListener('click', () => downloadImage(pipelineResultEl, 'resultado_pipeline.png'));
+        document.getElementById('downloadMasked').addEventListener('click', () => downloadImageFromCanvas(maskedImageEl, 'imagem_mascarada.png'));
+        document.getElementById('downloadFourier').addEventListener('click', () => downloadImageFromCanvas(fourierImageEl, 'espectro_fourier.png'));
+        document.getElementById('downloadHistogram').addEventListener('click', () => downloadImageFromCanvas(originalHistogramCanvas, 'histograma_original.png'));
+        document.getElementById('downloadNormalizedHist').addEventListener('click', () => downloadImageFromCanvas(normalizedHistogramCanvas, 'histograma_normalizado.png'));
+        
+
+        // Handle image upload
+        function handleImageUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(event) {
+                originalImage = new Image();
+                originalImage.onload = function() {
+                    originalImageEl.src = originalImage.src;
+                    processingArea.classList.remove('hidden');
+                    const grayDataUrl = convertToGrayscale(originalImage);
+                    grayImageEl.src = grayDataUrl;
+
+                    grayImage = new Image();
+                    grayImage.onload = function() {
+                        // 1. Define a imagem cinza como a imagem base.
+                        currentImage = grayImage;
+                        
+                        // 2. Cria os histogramas iniciais.
+                        createHistograms(grayImage);
+                        
+                        // 3. Calcula a FFT inicial para ter os dados prontos para a "Inversa de Fourier".
+                        // O 'true' garante que o estado global seja salvo corretamente na primeira carga.
+                        calculateFourierSpectrum(grayImage, true); 
+                        
+                        // 4. Atualiza os descritores.
+                        updateDescriptorResults();
+                        
+                        // 5. [CORREÇÃO CHAVE] Limpa o pipeline e reseta a UI para o estado inicial.
+                        // A chamada a displayFourierSpectrum foi REMOVIDA.
+                        // A função clearPipeline já chama updatePipelineDisplay e updatePreview,
+                        // garantindo que a exibição inicial esteja correta e limpa.
+                        clearPipeline(); 
+                    };
+                    grayImage.src = grayDataUrl;
+                };
+                originalImage.src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // Convert image to grayscale
+        function convertToGrayscale(image) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+                data[i] = gray;
+                data[i + 1] = gray;
+                data[i + 2] = gray;
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+
+            // Corrija aqui: retorne a URL, não um objeto Image
+            return canvas.toDataURL();
+        }
+
+        // Create histograms
+        function createHistograms(image) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Calculate histogram
+            const histogram = new Array(256).fill(0);
+            for (let i = 0; i < data.length; i += 4) {
+                histogram[data[i]]++;
+            }
+
+            // Normalized histogram
+            const totalPixels = image.width * image.height;
+            const normalizedHistogram = histogram.map(count => count / totalPixels);
+
+            // Create charts
+            const originalHistogramCtx = document.getElementById('originalHistogram').getContext('2d');
+            const normalizedHistogramCtx = document.getElementById('normalizedHistogram').getContext('2d');
+
+            // Destroy existing charts if they exist
+            if (originalHistogramChart) originalHistogramChart.destroy();
+            if (normalizedHistogramChart) normalizedHistogramChart.destroy();
+
+            // Original histogram
+            originalHistogramChart = new Chart(originalHistogramCtx, {
+                type: 'bar',
+                data: {
+                    labels: Array.from({
+                        length: 256
+                    }, (_, i) => i),
+                    datasets: [{
+                        label: 'Histograma Original',
+                        data: histogram,
+                        backgroundColor: 'rgba(124, 58, 237, 0.6)',
+                        borderColor: 'rgba(124, 58, 237, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: false,
+                            title: {
+                                display: true,
+                                text: 'Intensidade de Pixel',
+                                color: 'white'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Número de Pixels',
+                                color: 'white'
+                            },
+                            ticks: {
+                                color: 'white'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Histograma Original',
+                            color: 'white',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Normalized histogram
+            normalizedHistogramChart = new Chart(normalizedHistogramCtx, {
+                type: 'bar',
+                data: {
+                    labels: Array.from({
+                        length: 256
+                    }, (_, i) => i),
+                    datasets: [{
+                        label: 'Histograma Normalizado',
+                        data: normalizedHistogram,
+                        backgroundColor: 'rgba(124, 58, 237, 0.6)',
+                        borderColor: 'rgba(124, 58, 237, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: false,
+                            title: {
+                                display: true,
+                                text: 'Intensidade de Pixel',
+                                color: 'white'
+                            }
+                        },
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Frequência Relativa',
+                                color: 'white'
+                            },
+                            ticks: {
+                                color: 'white'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.1)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Histograma Normalizado',
+                            color: 'white',
+                            font: {
+                                size: 16,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Função principal que orquestra o processo
+        function calculateFourierSpectrum(image, updateGlobalState = false) {
+            const nextPowerOf2 = (n) => Math.pow(2, Math.ceil(Math.log2(n)));
+            const size = nextPowerOf2(Math.max(image.width, image.height));
+
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0, size, size);
+            const imageData = ctx.getImageData(0, 0, size, size);
+            
+            const complexData = new Array(size * size);
+            for (let i = 0; i < imageData.data.length; i += 4) {
+                complexData[i / 4] = { re: imageData.data[i], im: 0 };
+            }
+
+            fft2d(complexData, size, size);
+
+            // [CORREÇÃO CHAVE]
+            // Só atualiza a variável global se explicitamente instruído.
+            // Isso só acontecerá quando o pipeline principal for executado.
+            if (updateGlobalState) {
+                fourierComplexData = complexData;
+                fourierImageSize = size;
+            }
+
+            const magnitudeSpectrum = new Float32Array(size * size);
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const index = y * size + x;
+                    const mag = Math.sqrt(complexData[index].re * complexData[index].re + complexData[index].im * complexData[index].im);
+                    const newX = (x + size / 2) % size;
+                    const newY = (y + size / 2) % size;
+                    magnitudeSpectrum[newY * size + newX] = Math.log1p(mag);
+                }
+            }
+
+            const normalized = normalizeForDisplay(magnitudeSpectrum, size, size);
+
+            // Retorna tanto a imagem da magnitude quanto os dados complexos locais.
+            return {
+                magnitudeImage: createImageFromData(normalized, size, size),
+                complexData: complexData, // Retorna uma cópia local para uso no preview
+                width: size,
+                height: size
+            };
+        }
+                
+
+        // Implementação do algoritmo FFT 1D (Cooley-Tukey)
+        function fft(data) {
+            const n = data.length;
+            if (n <= 1) return data;
+
+            // Divide o array em pares e ímpares
+            const even = new Array(n / 2);
+            const odd = new Array(n / 2);
+            for (let i = 0; i < n / 2; i++) {
+                even[i] = data[i * 2];
+                odd[i] = data[i * 2 + 1];
+            }
+
+            // Recursão
+            const fftEven = fft(even);
+            const fftOdd = fft(odd);
+
+            // Combina os resultados
+            const result = new Array(n);
+            for (let k = 0; k < n / 2; k++) {
+                const angle = -2 * Math.PI * k / n;
+                const t = {
+                    re: Math.cos(angle) * fftOdd[k].re - Math.sin(angle) * fftOdd[k].im,
+                    im: Math.cos(angle) * fftOdd[k].im + Math.sin(angle) * fftOdd[k].re
+                };
+                result[k] = {
+                    re: fftEven[k].re + t.re,
+                    im: fftEven[k].im + t.im
+                };
+                result[k + n / 2] = {
+                    re: fftEven[k].re - t.re,
+                    im: fftEven[k].im - t.im
+                };
+            }
+            return result;
+        }
+
+        // Função que aplica a FFT 1D em linhas e depois em colunas
+        function fft2d(data, width, height) {
+            // FFT por linha
+            for (let y = 0; y < height; y++) {
+                const row = data.slice(y * width, (y + 1) * width);
+                const fftRow = fft(row);
+                for (let x = 0; x < width; x++) {
+                    data[y * width + x] = fftRow[x];
+                }
+            }
+
+            // FFT por coluna
+            for (let x = 0; x < width; x++) {
+                const col = new Array(height);
+                for (let y = 0; y < height; y++) {
+                    col[y] = data[y * width + x];
+                }
+                const fftCol = fft(col);
+                for (let y = 0; y < height; y++) {
+                    data[y * width + x] = fftCol[y];
+                }
+            }
+        }
+
+        // As funções de normalização e exibição permanecem as mesmas
+        function normalizeForDisplay(data, width, height) {
+            const normalized = new Uint8ClampedArray(width * height);
+            let min = Infinity, max = -Infinity;
+            for (let i = 0; i < data.length; i++) {
+                if (data[i] < min) min = data[i];
+                if (data[i] > max) max = data[i];
+            }
+            const range = max - min;
+            if (range === 0) return normalized;
+            for (let i = 0; i < data.length; i++) {
+                normalized[i] = 255 * (data[i] - min) / range;
+            }
+            return normalized;
+        }
+
+        function displayFourierSpectrum(data, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(width, height);
+            for (let i = 0; i < data.length; i++) {
+                const value = data[i];
+                imageData.data[i * 4] = value;
+                imageData.data[i * 4 + 1] = value;
+                imageData.data[i * 4 + 2] = value;
+                imageData.data[i * 4 + 3] = 255;
+            }
+            ctx.putImageData(imageData, 0, 0);
+            previewImageEl.src = canvas.toDataURL();
+        }
+
+        // Implementação da FFT Inversa 1D
+        function ifft(data) {
+            const n = data.length;
+            // Pega o conjugado de cada número complexo
+            const conjugated = data.map(c => ({ re: c.re, im: -c.im }));
+            
+            // Aplica a FFT normal
+            const result = fft(conjugated);
+
+            // Pega o conjugado novamente e normaliza (divide por N)
+            return result.map(c => ({ re: c.re / n, im: -c.im / n }));
+        }
+
+        // Função que aplica a IFFT 1D em linhas e depois em colunas
+        function ifft2d(data, width, height) {
+            // IFFT por linha
+            for (let y = 0; y < height; y++) {
+                const row = data.slice(y * width, (y + 1) * width);
+                const ifftRow = ifft(row);
+                for (let x = 0; x < width; x++) {
+                    data[y * width + x] = ifftRow[x];
+                }
+            }
+
+            // IFFT por coluna
+            for (let x = 0; x < width; x++) {
+                const col = new Array(height);
+                for (let y = 0; y < height; y++) {
+                    col[y] = data[y * width + x];
+                }
+                const ifftCol = ifft(col);
+                for (let y = 0; y < height; y++) {
+                    data[y * width + x] = ifftCol[y];
+                }
+            }
+
+        }
+
+
+        // Atualiza as opções da UI com base no filtro selecionado
+        function updateFourierFilterOptions() {
+            const type = document.getElementById('fourierFilterType').value;
+            let optionsHTML = '';
+
+            switch (type) {
+                case 'lowpass':
+                case 'highpass':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="fourierCutoff" class="block text-sm font-medium mb-2">Raio de Corte (D₀): <span id="fourierCutoffDisplay">30</span></label>
+                            <input type="range" id="fourierCutoff" min="1" max="200" value="30" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    `;
+                    break;
+                case 'custom':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="customMaskUpload" class="block text-sm font-medium mb-2">Enviar Máscara (P&B):</label>
+                            <input type="file" id="customMaskUpload" accept="image/png, image/jpeg" class="block w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-purple-600 file:text-white hover:file:bg-purple-700 cursor-pointer"/>
+                        </div>
+                    `;
+                    break;
+            }
+            fourierFilterOptions.innerHTML = optionsHTML;
+
+            // Adiciona listeners para os novos controles
+            if (type === 'lowpass' || type === 'highpass') {
+                const cutoffSlider = document.getElementById('fourierCutoff');
+                const cutoffDisplay = document.getElementById('fourierCutoffDisplay');
+                cutoffSlider.addEventListener('input', () => {
+                    cutoffDisplay.textContent = cutoffSlider.value;
+                    applyFourierFilter();
+                });
+            } else if (type === 'custom') {
+                document.getElementById('customMaskUpload').addEventListener('change', applyFourierFilter);
+            }
+            
+            // Aplica o filtro imediatamente ao mudar o tipo
+            applyFourierFilter();
+        }
+
+        // Função principal que aplica o filtro selecionado
+        function applyFourierFilter() {
+            if (!fourierComplexData) return; // Não faz nada se a FFT não foi calculada
+
+            const type = document.getElementById('fourierFilterType').value;
+            const size = fourierImageSize;
+            let mask = new Float32Array(size * size).fill(1); // Começa com uma máscara que não faz nada
+
+            // Cria a máscara apropriada
+            switch (type) {
+                case 'lowpass':
+                case 'highpass':
+                    const cutoff = parseInt(document.getElementById('fourierCutoff').value);
+                    const centerX = size / 2;
+                    const centerY = size / 2;
+                    for (let y = 0; y < size; y++) {
+                        for (let x = 0; x < size; x++) {
+                            const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                            let pass = (type === 'lowpass') ? (distance <= cutoff) : (distance > cutoff);
+                            mask[y * size + x] = pass ? 1: 0;
+                        }
+                    }
+                    break;
+                case 'custom':
+                    const file = document.getElementById('customMaskUpload').files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            const img = new Image();
+                            img.onload = () => {
+                                const maskCanvas = document.createElement('canvas');
+                                maskCanvas.width = size;
+                                maskCanvas.height = size;
+                                const maskCtx = maskCanvas.getContext('2d');
+                                maskCtx.drawImage(img, 0, 0, size, size);
+                                const maskImageData = maskCtx.getImageData(0, 0, size, size).data;
+                                for (let i = 0; i < mask.length; i++) {
+                                    // Usa o valor do canal vermelho e normaliza para 0 ou 1
+                                    mask[i] = maskImageData[i * 4] > 128 ? 1 : 0;
+                                }
+                                // Reaplica o filtro após a máscara ser carregada
+                                applyFilterAndDisplay(mask);
+                            };
+                            img.src = e.target.result;
+                        };
+                        reader.readAsDataURL(file);
+                        return; // Sai da função e espera a máscara carregar
+                    }
+                    break;
+                case 'none':
+                default:
+                    // Usa a máscara padrão que não faz nada
+                    break;
+            }
+            
+            applyFilterAndDisplay(mask);
+        }
+
+
+        // Função auxiliar para aplicar a máscara e exibir o resultado
+        function applyFilterAndDisplay(mask) {
+            const size = fourierImageSize;
+            const filteredData = new Array(size * size);
+
+            // Aplica a máscara (multiplicação ponto a ponto)
+            // A máscara precisa ser "shiftada" para corresponder ao espectro não-centralizado
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const maskX = (x + size / 2) % size;
+                    const maskY = (y + size / 2) % size;
+                    const maskValue = mask[maskY * size + maskX];
+                    
+                    const index = y * size + x;
+                    filteredData[index] = {
+                        re: fourierComplexData[index].re * maskValue,
+                        im: fourierComplexData[index].im * maskValue
+                    };
+                }
+            }
+
+            // Aplica a IFFT 2D
+            ifft2d(filteredData, size, size);
+
+            // Converte o resultado de volta para uma imagem visível
+            const resultCanvas = document.createElement('canvas');
+            resultCanvas.width = size;
+            resultCanvas.height = size;
+            const resultCtx = resultCanvas.getContext('2d');
+            const resultImageData = resultCtx.createImageData(size, size);
+
+            for (let i = 0; i < filteredData.length; i++) {
+                // Usa apenas a parte real do resultado da IFFT
+                const value = Math.max(0, Math.min(255, filteredData[i].re));
+                resultImageData.data[i * 4] = value;
+                resultImageData.data[i * 4 + 1] = value;
+                resultImageData.data[i * 4 + 2] = value;
+                resultImageData.data[i * 4 + 3] = 255;
+            }
+
+            displayFourierSpectrum(resultImageData.data, size, size);
+            // resultCtx.putImageData(resultImageData, 0, 0);
+        }
+        
+        // Função para aplicar a Transformada Inversa de Fourier (IFFT)
+        function applyInverseFourierTransform() {
+            // 1. Verifica se existem dados complexos da última FFT para usar.
+            if (!fourierComplexData) {
+                console.warn("Nenhum dado de Fourier para inverter. Retornando imagem atual.");
+                return currentImage; // Retorna a imagem atual se não houver nada para inverter.
+            }
+
+            // 2. Cria uma cópia para não modificar os dados globais.
+            const dataToIfft = fourierComplexData.map(c => ({ ...c }));
+
+            // 3. Aplica a IFFT 2D.
+            ifft2d(dataToIfft, fourierImageSize, fourierImageSize);
+
+            // 4. Converte os dados complexos resultantes de volta para uma imagem espacial.
+            const resultImage = createImageFromComplexData(dataToIfft, fourierImageSize);
+            
+            return resultImage;
+        }
+
+
+        // Update operation options based on selected type
+        function updateOperationOptions() {
+            const type = operationType.value;
+            const optionsContainer = document.getElementById('operationOptions');
+            let optionsHTML = '';
+
+            switch (type) {
+                case 'fourier_filter':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="fourierFilterType" class="block text-sm font-medium mb-2">Tipo de Filtro:</label>
+                            <select id="fourierFilterType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="lowpass">Passa-Baixa Ideal</option>
+                                <option value="highpass">Passa-Alta Ideal</option>
+                                <option value="custom_kernel">Kernel Espacial (via Frequência)</option>
+                            </select>
+                        </div>
+                        <div id="fourierOptionsContainer">
+                            <!-- As opções específicas do filtro serão inseridas aqui -->
+                        </div>
+                    `;
+                    break;
+                // ... Seus outros cases (lowpass, highpass, noise, etc.) permanecem aqui ...
+                case 'lowpass':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="lowpassType" class="block text-sm font-medium mb-2">Filtro Passa-Baixa:</label>
+                            <select id="lowpassType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="average">Média</option>
+                                <option value="median">Mediana</option>
+                                <option value="gaussian">Gaussiano</option>
+                                <option value="max">Máximo</option>
+                                <option value="min">Mínimo</option>
+                            </select>
+                        </div>
+                    `;
+                    break;
+
+                case 'highpass':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="highpassType" class="block text-sm font-medium mb-2">Filtro Passa-Alta:</label>
+                            <select id="highpassType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="laplacian">Laplaciano</option>
+                                <option value="roberts">Roberts</option>
+                                <option value="prewitt">Prewitt</option>
+                                <option value="sobel">Sobel</option>
+                            </select>
+                        </div>
+                    `;
+                    break;
+
+                case 'segmentation':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="segmentationType" class="block text-sm font-medium mb-2">Segmentação:</label>
+                            <select id="segmentationType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="simple">Limiarização Simples</option>
+                                <option value="otsu">Limiarização de Otsu</option>
+                                <option value="canny">Canny</option>
+                                <option value="adaptive">Limiarização Local (Adaptativa)</option>
+                                <option value="otsuAdaptive">Limiarização de Otsu Adaptativa</option>
+                                <option value="iterative">Limiarização Iterativa</option>
+                            </select>
+                        </div>
+                        <div id="thresholdContainer" class="mb-4">
+                            <label for="thresholdValue" class="block text-sm font-medium mb-2">Limiar:</label>
+                            <input type="range" id="thresholdValue" min="0" max="255" value="128" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                            <span id="thresholdDisplay" class="text-sm">128</span>
+                        </div>
+                    `;
+                    break;
+
+                case 'morphology':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="morphologyType" class="block text-sm font-medium mb-2">Operação Morfológica:</label>
+                            <select id="morphologyType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="opening">Abertura</option>
+                                <option value="closing">Fechamento</option>
+                                <option value="erosion">Erosão</option>
+                                <option value="dilation">Dilatação</option>
+                                <option value="hitmiss">Hit or Miss</option>
+                            </select>
+                        </div>
+                    `;
+                    break;
+
+                case 'object':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="objectType" class="block text-sm font-medium mb-2">Seleção de Objetos:</label>
+                            <select id="objectType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="largest">Maior Objeto</option>
+                                <option value="central">Objeto Central</option>
+                                <option value="closed">Objetos de Contorno Fechado</option>
+                            </select>
+                        </div>
+                    `;
+                    break;
+
+                case 'custom':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="customKernel" class="block text-sm font-medium mb-2">Insira o kernel:</label>
+                            <textarea id="customKernel" rows="3" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5" placeholder="[[1, 0, -1], [1, 0, -1], [1, 0, -1]]"></textarea>
+                        </div>
+                    `;
+                    break;
+                case 'noise':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="noiseType" class="block text-sm font-medium mb-2">Tipo de Ruído:</label>
+                            <select id="noiseType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="salt_pepper">Sal e Pimenta</option>
+                                <option value="gaussian">Gaussiano</option>
+                                <option value="uniform">Uniforme</option>
+                                <option value="quantization">Quantização</option>
+                                <option value="speckle">Speckle (Multiplicativo)</option>
+                                <option value="poisson">Poisson</option>
+                            </select>
+                        </div>
+                        <div id="noiseOptionsContainer"></div>
+                    `;
+                    break;
+                default:
+                    optionsHTML = '<p class="text-gray-400">Nenhuma opção adicional para esta operação.</p>';
+            }
+            optionsContainer.innerHTML = optionsHTML;
+
+            // --- Lógica de Adição de Listeners ---
+            
+            // Função interna para configurar os controles de Fourier
+            function setupFourierControls() {
+                const fourierContainer = document.getElementById('fourierOptionsContainer');
+                if (!fourierContainer) return;
+                const filterType = document.getElementById('fourierFilterType').value;
+                let fourierOptionsHTML = '';
+
+                if (filterType === 'custom_kernel') {
+                    fourierOptionsHTML = `
+                        <div class="mb-4">
+                            <label for="fourierKernelText" class="block text-sm font-medium mb-2">Insira o Kernel Espacial:</label>
+                            <textarea id="fourierKernelText" rows="3" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg block w-full p-2.5" placeholder="[[1, 2, 1], [2, 4, 2], [1, 2, 1]]"></textarea>
+                        </div>
+                    `;
+                } else { // lowpass ou highpass
+                    fourierOptionsHTML = `
+                        <div class="mb-4">
+                            <label for="fourierCutoff" class="block text-sm font-medium mb-2">Raio de Corte (D₀): <span id="fourierCutoffDisplay">30</span></label>
+                            <input type="range" id="fourierCutoff" min="1" max="128" value="30" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    `;
+                }
+                fourierContainer.innerHTML = fourierOptionsHTML;
+
+                // Adiciona listeners aos controles recém-criados
+                if (filterType === 'custom_kernel') {
+                    const kernelText = document.getElementById('fourierKernelText');
+                    if (kernelText) kernelText.addEventListener('input', updatePreview);
+                } else {
+                    const cutoffSlider = document.getElementById('fourierCutoff');
+                    if (cutoffSlider) {
+                        cutoffSlider.addEventListener('input', (e) => {
+                            const display = document.getElementById('fourierCutoffDisplay');
+                            if(display) display.textContent = e.target.value;
+                            updatePreview();
+                        });
+                    }
+                }
+                updatePreview();
+            }
+
+            // Adiciona os listeners principais com base no tipo de operação
+            if (type === 'fourier_filter') {
+                const filterTypeSelect = document.getElementById('fourierFilterType');
+                // [CORREÇÃO DO ERRO] Verifica se o elemento existe antes de adicionar o listener.
+                if (filterTypeSelect) {
+                    filterTypeSelect.addEventListener('change', setupFourierControls);
+                    setupFourierControls(); // Chama uma vez para inicializar
+                }
+            } else if (type === 'noise') {
+                // ... (seu código de listener para ruído)
+            } else if (type === 'segmentation') {
+                // ... (seu código de listener para segmentação)
+            } else {
+                const selects = optionsContainer.querySelectorAll('select');
+                selects.forEach(select => select.addEventListener('change', updatePreview));
+            }
+        }
+
+        // Update preview image based on selected operation
+        async function updatePreview() {
+            // 1. Garante que a imagem base (a saída do pipeline atual) exista.
+            if (!currentImage) {
+                if (grayImage) {
+                    currentImage = grayImage;
+                } else {
+                    return; // Sai se não houver imagem alguma.
+                }
+            }
+            
+            document.getElementById('previewSection').classList.remove('hidden');
+
+            // 2. Pega a operação selecionada na UI.
+            const operation = getCurrentOperationFromUI();
+            if (!operation) {
+                previewImageEl.src = currentImage.src;
+                return;
+            }
+
+            // 3. Usa 'await' para esperar a Promise da processSingleOperation ser resolvida.
+            // A imagem de entrada para o preview é SEMPRE a 'currentImage' (saída do pipeline).
+            const previewImageObject = await processSingleOperation(operation, currentImage);
+
+            // 4. Exibe o resultado da operação no preview.
+            if (previewImageObject && previewImageObject.src) {
+                previewImageEl.src = previewImageObject.src;
+            }
+        }
+
+        function processSingleOperation(op, inputImage, isPipelineRun = false) {
+            return new Promise((resolve) => {
+                const imageToProcess = new Image();
+                imageToProcess.onload = () => {
+                    const resultImage = process(op, imageToProcess, isPipelineRun);
+                    resolve(resultImage);
+                };
+                imageToProcess.src = inputImage.src;
+            });
+
+            function process(operation, image, isPipelineRun) {
+                switch (operation.type) {
+                    case 'fourier_transform':
+                        // [CORREÇÃO CHAVE]
+                        // Passa 'isPipelineRun' para a função. Se for um preview, o estado global não será atualizado.
+                        const result = calculateFourierSpectrum(image, isPipelineRun);
+                        return result.magnitudeImage;
+
+                    case 'fourier_filter':
+                        const spectrum = calculateFourierSpectrum(image, false);
+                        
+                        if (operation.subtype === 'custom_kernel') {
+                            // Lógica para o filtro de kernel (convolução), que já funciona.
+                            let kernel;
+                            try { kernel = JSON.parse(operation.kernel); } catch (e) { kernel = [[1]]; }
+                            const maskComplex = createFourierMask(operation.subtype, spectrum.width, 0, kernel);
+
+                            // Multiplicação de números complexos.
+                            for (let i = 0; i < spectrum.complexData.length; i++) {
+                                const a = spectrum.complexData[i];
+                                const b = maskComplex[i];
+                                const re = a.re * b.re - a.im * b.im;
+                                const im = a.re * b.im + a.im * b.re;
+                                spectrum.complexData[i] = { re, im };
+                            }
+                        } else { // Lógica para filtros ideais (lowpass/highpass).
+                            // [CORREÇÃO CHAVE]
+                            // 1. Centraliza o espectro da imagem.
+                            const shiftedSpectrum = fftShift(spectrum.complexData, spectrum.width, spectrum.height);
+                            
+                            // 2. Cria a máscara ideal (que é um array simples de 0s e 1s).
+                            const maskIdeal = createFourierMask(operation.subtype, spectrum.width, operation.cutoff);
+
+                            // 3. Aplica a máscara simples. Multiplica tanto a parte real quanto a imaginária pelo mesmo valor (0 ou 1).
+                            for (let i = 0; i < shiftedSpectrum.length; i++) {
+                                shiftedSpectrum[i].re *= maskIdeal[i];
+                                shiftedSpectrum[i].im *= maskIdeal[i];
+                            }
+                            
+                            // 4. Desfaz o shift para preparar para a IFFT.
+                            spectrum.complexData = fftShift(shiftedSpectrum, spectrum.width, spectrum.height);
+                        }
+
+                        // Aplica a IFFT e retorna a imagem espacial.
+                        ifft2d(spectrum.complexData, spectrum.width, spectrum.height);
+                        return createImageFromComplexData(spectrum.complexData, spectrum.width);
+                    case 'inverse_fourier_transform':
+                        return applyInverseFourierTransform();
+
+                    // O resto dos cases permanece o mesmo...
+                    case 'noise': return applyNoise(image, operation.subtype, operation.parameter);
+                    case 'lowpass': return applyLowpassFilter(image, operation.subtype);
+                    case 'highpass': return applyHighpassFilter(image, operation.subtype);
+                    case 'segmentation': return applySegmentation(image, operation.subtype, operation.threshold);
+                    case 'morphology': return applyMorphology(image, operation.subtype);
+                    case 'object': return selectObjects(image, operation.subtype);
+                    case 'custom': return applyCustomFilter(image, JSON.parse(operation.kernel));
+                    case 'negative': return applyNegativeFilter(image);
+                    default: return image;
+                }
+            }
+        }
+
+        // Função para criar uma imagem a partir dos dados complexos da FFT
+        function createImageFromData(data, width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(width, height);
+
+            // Itera sobre o array de entrada (que tem 1 valor por pixel)
+            // e preenche o imageData (que precisa de 4 valores por pixel)
+            for (let i = 0; i < data.length; i++) {
+                const value = data[i];
+                const outIndex = i * 4;
+                imageData.data[outIndex] = value;     // R
+                imageData.data[outIndex + 1] = value; // G
+                imageData.data[outIndex + 2] = value; // B
+                imageData.data[outIndex + 3] = 255;   // A
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            const img = new Image();
+            img.src = canvas.toDataURL();
+            return img;
+        }
+
+
+        // Função para criar uma máscara de Fourier (passa-baixa ou passa-alta)
+        function createFourierMask(type, size, cutoff, kernel) {
+            if (type === 'custom_kernel') {
+                // A lógica para o kernel já está correta.
+                const kernelImage = new Array(size * size).fill(0);
+                const kHeight = kernel.length;
+                const kWidth = kernel[0].length;
+                const kCenterY = Math.floor(kHeight / 2);
+                const kCenterX = Math.floor(kWidth / 2);
+
+                for (let y = 0; y < kHeight; y++) {
+                    for (let x = 0; x < kWidth; x++) {
+                        const imgX = (x - kCenterX + size) % size;
+                        const imgY = (y - kCenterY + size) % size;
+                        kernelImage[imgY * size + imgX] = kernel[y][x];
+                    }
+                }
+                
+                const complexKernel = kernelImage.map(val => ({ re: val, im: 0 }));
+                fft2d(complexKernel, size, size);
+                return complexKernel; // Retorna os dados complexos do kernel transformado.
+            } 
+            
+            // [CORREÇÃO CHAVE] Lógica para filtros ideais (passa-baixa/alta).
+            // Agora retorna um array simples de 0s e 1s, não um array de objetos complexos.
+            const mask = new Float32Array(size * size);
+            const centerX = size / 2;
+            const centerY = size / 2;
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    const distance = Math.sqrt(Math.pow(x - centerX, 2) + Math.pow(y - centerY, 2));
+                    let pass = (type === 'lowpass') ? (distance <= cutoff) : (distance > cutoff);
+                    mask[y * size + x] = pass ? 1 : 0;
+                }
+            }
+            return mask; // Retorna o array simples.
+        }
+
+        // Função para aplicar a máscara aos dados complexos da FFT
+        function applyMaskToComplexData(complexData, mask, size) {
+            // Itera sobre cada ponto no domínio da frequência
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    // A máscara foi criada com o centro (0,0) no meio da imagem.
+                    // Os dados da FFT têm o centro (0,0) no canto superior esquerdo.
+                    // Portanto, precisamos "shiftar" as coordenadas da máscara para que correspondam.
+                    const maskX = (x + size / 2) % size;
+                    const maskY = (y + size / 2) % size;
+                    const maskValue = mask[maskY * size + maskX];
+                    
+                    // Aplica a máscara multiplicando o valor do filtro (0 ou 1)
+                    // pelos componentes real e imaginário do dado complexo.
+                    const index = y * size + x;
+                    complexData[index].re *= maskValue;
+                    complexData[index].im *= maskValue;
+                }
+            }
+        }
+        // Função para criar uma imagem a partir dos dados complexos da IFFT
+        function createImageFromComplexData(complexData, size) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(size, size);
+
+            // Preenche os dados da imagem com a parte REAL dos resultados da IFFT
+            for (let i = 0; i < complexData.length; i++) {
+                const value = Math.max(0, Math.min(255, complexData[i].re)); // Pega a parte real
+                const outIndex = i * 4;
+                imageData.data[outIndex] = value;
+                imageData.data[outIndex + 1] = value;
+                imageData.data[outIndex + 2] = value;
+                imageData.data[outIndex + 3] = 255;
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            const img = new Image();
+            img.src = canvas.toDataURL();
+            return img;
+        }
+
+        // Função para obter a operação atual da UI
+        function getCurrentOperationFromUI() {
+            const type = operationType.value;
+            if (type === 'none') return null;
+
+            const operation = { type };
+            switch (type) {
+                case 'fourier_filter':
+                    operation.subtype = document.getElementById('fourierFilterType').value;
+                    
+                    // [NOVO] Adiciona a lógica para ler o controle correto.
+                    if (operation.subtype === 'custom_kernel') {
+                        const kernelText = document.getElementById('fourierKernelText').value;
+                        // Adiciona uma verificação para garantir que o kernel seja válido antes de tentar usá-lo.
+                        try {
+                            JSON.parse(kernelText); // Apenas para validar o JSON
+                            operation.kernel = kernelText;
+                        } catch (e) {
+                            operation.kernel = "[[1]]"; // Fallback para um kernel que não faz nada
+                        }
+                    } else {
+                        operation.cutoff = parseInt(document.getElementById('fourierCutoff').value);
+                    }
+                    break;
+                case 'noise':
+                    operation.subtype = document.getElementById('noiseType').value;
+                    const paramElement = operation.subtype === 'quantization' ? 
+                        document.getElementById('quantizationLevels') : 
+                        document.getElementById('noiseAmount');
+                    if (paramElement) operation.parameter = parseInt(paramElement.value);
+                    break;
+                case 'lowpass':
+                    operation.subtype = document.getElementById('lowpassType').value;
+                    break;
+                case 'highpass':
+                    operation.subtype = document.getElementById('highpassType').value;
+                    break;
+                case 'segmentation':
+                    operation.subtype = document.getElementById('segmentationType').value;
+                    if (operation.subtype === 'simple' || operation.subtype === 'iterative') {
+                        operation.threshold = parseInt(document.getElementById('thresholdValue').value);
+                    }
+                    break;
+                case 'morphology':
+                    operation.subtype = document.getElementById('morphologyType').value;
+                    break;
+                case 'object':
+                    operation.subtype = document.getElementById('objectType').value;
+                    break;
+                case 'custom':
+                    operation.kernel = document.getElementById('customKernel').value;
+                    break;
+            }
+            return operation;
+        }
+
+
+        
+        // Apply lowpass filter
+        function applyLowpassFilter(image, type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Create a copy for processing
+            const processedData = new Uint8ClampedArray(data.length);
+            processedData.set(data);
+
+            // Apply filter based on type
+            switch (type) {
+                case 'average':
+                    // Simple averaging filter
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let sum = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    sum += data[kidx];
+                                }
+                            }
+
+                            const avg = Math.round(sum / 9);
+                            processedData[idx] = avg;
+                            processedData[idx + 1] = avg;
+                            processedData[idx + 2] = avg;
+                        }
+                    }
+                    break;
+
+                case 'median':
+                    // Simple median filter
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            const values = [];
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    values.push(data[kidx]);
+                                }
+                            }
+
+                            values.sort((a, b) => a - b);
+                            const median = values[4]; // Middle value
+                            processedData[idx] = median;
+                            processedData[idx + 1] = median;
+                            processedData[idx + 2] = median;
+                        }
+                    }
+                    break;
+
+                case 'gaussian':
+                    // Simple Gaussian approximation
+                    const gaussianKernel = [
+                        [1, 2, 1],
+                        [2, 4, 2],
+                        [1, 2, 1]
+                    ];
+                    const kernelSum = 16;
+
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let sum = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weight = gaussianKernel[ky + 1][kx + 1];
+                                    sum += data[kidx] * weight;
+                                }
+                            }
+
+                            const value = Math.round(sum / kernelSum);
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+
+                case 'max':
+                    // Maximum filter
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let maxVal = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    maxVal = Math.max(maxVal, data[kidx]);
+                                }
+                            }
+
+                            processedData[idx] = maxVal;
+                            processedData[idx + 1] = maxVal;
+                            processedData[idx + 2] = maxVal;
+                        }
+                    }
+                    break;
+
+                case 'min':
+                    // Minimum filter
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let minVal = 255;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    minVal = Math.min(minVal, data[kidx]);
+                                }
+                            }
+
+                            processedData[idx] = minVal;
+                            processedData[idx + 1] = minVal;
+                            processedData[idx + 2] = minVal;
+                        }
+                    }
+                    break;
+            }
+
+            ctx.putImageData(new ImageData(processedData, canvas.width, canvas.height), 0, 0);
+
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        function fftShift(complexData, width, height) {
+            const shiftedData = new Array(width * height);
+            const halfWidth = Math.floor(width / 2);
+            const halfHeight = Math.floor(height / 2);
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const newX = (x + halfWidth) % width;
+                    const newY = (y + halfHeight) % height;
+                    const oldIndex = y * width + x;
+                    const newIndex = newY * width + newX;
+                    shiftedData[newIndex] = complexData[oldIndex];
+                }
+            }
+            return shiftedData;
+        }
+
+        // Apply highpass filter
+        function applyHighpassFilter(image, type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Create a copy for processing
+            const processedData = new Uint8ClampedArray(data.length);
+            processedData.set(data);
+
+            // Apply filter based on type
+            switch (type) {
+                case 'laplacian':
+                    // Laplacian filter
+                    const laplacianKernel = [
+                        [0, 1, 0],
+                        [1, -4, 1],
+                        [0, 1, 0]
+                    ];
+
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let sum = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weight = laplacianKernel[ky + 1][kx + 1];
+                                    sum += data[kidx] * weight;
+                                }
+                            }
+
+                            // Add 128 to make negative values visible
+                            const value = Math.min(255, Math.max(0, sum + 128));
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+
+                case 'roberts':
+                    // Roberts cross operator
+                    for (let y = 0; y < canvas.height - 1; y++) {
+                        for (let x = 0; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            const idx1 = (y * canvas.width + x) * 4;
+                            const idx2 = ((y + 1) * canvas.width + (x + 1)) * 4;
+                            const idx3 = (y * canvas.width + (x + 1)) * 4;
+                            const idx4 = ((y + 1) * canvas.width + x) * 4;
+
+                            const gx = data[idx1] - data[idx2];
+                            const gy = data[idx3] - data[idx4];
+                            const magnitude = Math.min(255, Math.max(0, Math.sqrt(gx * gx + gy * gy)));
+
+                            processedData[idx] = magnitude;
+                            processedData[idx + 1] = magnitude;
+                            processedData[idx + 2] = magnitude;
+                        }
+                    }
+                    break;
+
+                case 'prewitt':
+                    // Prewitt operator
+                    const prewittX = [
+                        [-1, 0, 1],
+                        [-1, 0, 1],
+                        [-1, 0, 1]
+                    ];
+                    const prewittY = [
+                        [-1, -1, -1],
+                        [0, 0, 0],
+                        [1, 1, 1]
+                    ];
+
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let gx = 0;
+                            let gy = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weightX = prewittX[ky + 1][kx + 1];
+                                    const weightY = prewittY[ky + 1][kx + 1];
+                                    gx += data[kidx] * weightX;
+                                    gy += data[kidx] * weightY;
+                                }
+                            }
+
+                            const magnitude = Math.min(255, Math.max(0, Math.sqrt(gx * gx + gy * gy)));
+                            processedData[idx] = magnitude;
+                            processedData[idx + 1] = magnitude;
+                            processedData[idx + 2] = magnitude;
+                        }
+                    }
+                    break;
+
+                case 'sobel':
+                    // Sobel operator
+                    const sobelX = [
+                        [-1, 0, 1],
+                        [-2, 0, 2],
+                        [-1, 0, 1]
+                    ];
+                    const sobelY = [
+                        [-1, -2, -1],
+                        [0, 0, 0],
+                        [1, 2, 1]
+                    ];
+
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let gx = 0;
+                            let gy = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weightX = sobelX[ky + 1][kx + 1];
+                                    const weightY = sobelY[ky + 1][kx + 1];
+                                    gx += data[kidx] * weightX;
+                                    gy += data[kidx] * weightY;
+                                }
+                            }
+
+                            const magnitude = Math.min(255, Math.max(0, Math.sqrt(gx * gx + gy * gy)));
+                            processedData[idx] = magnitude;
+                            processedData[idx + 1] = magnitude;
+                            processedData[idx + 2] = magnitude;
+                        }
+                    }
+                    break;
+            }
+
+            ctx.putImageData(new ImageData(processedData, canvas.width, canvas.height), 0, 0);
+
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        // Apply segmentation
+        function applySegmentation(image, type, threshold = null) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Create a copy for processing
+            const processedData = new Uint8ClampedArray(data.length);
+            processedData.set(data);
+
+            // Apply segmentation based on type
+            switch (type) {
+                case 'simple':
+                    // Simple thresholding
+                    if (threshold === null) threshold = 128;
+
+                    for (let i = 0; i < data.length; i += 4) {
+                        const value = data[i] > threshold ? 255 : 0;
+                        processedData[i] = value;
+                        processedData[i + 1] = value;
+                        processedData[i + 2] = value;
+                    }
+                    break;
+
+                case 'otsu':
+                    // Otsu's thresholding (simplified)
+                    const hist = new Array(256).fill(0);
+                    for (let i = 0; i < data.length; i += 4) {
+                        hist[data[i]]++;
+                    }
+
+                    // Find optimal threshold
+                    let sum = 0;
+                    for (let i = 0; i < 256; i++) {
+                        sum += i * hist[i];
+                    }
+
+                    let sumB = 0;
+                    let wB = 0;
+                    let wF = 0;
+                    let maxVar = 0;
+                    let thresholdOtsu = 0;
+
+                    for (let i = 0; i < 256; i++) {
+                        wB += hist[i];
+                        if (wB === 0) continue;
+
+                        wF = data.length / 4 - wB;
+                        if (wF === 0) break;
+
+                        sumB += i * hist[i];
+
+                        const mB = sumB / wB;
+                        const mF = (sum - sumB) / wF;
+
+                        const varBetween = wB * wF * (mB - mF) * (mB - mF);
+
+                        if (varBetween > maxVar) {
+                            maxVar = varBetween;
+                            thresholdOtsu = i;
+                        }
+                    }
+
+                    for (let i = 0; i < data.length; i += 4) {
+                        const value = data[i] > thresholdOtsu ? 255 : 0;
+                        processedData[i] = value;
+                        processedData[i + 1] = value;
+                        processedData[i + 2] = value;
+                    }
+                    break;
+
+                case 'canny':
+                    // Simplified Canny edge detection
+                    // First apply Gaussian blur
+                    const blurred = applyLowpassFilter(image, 'gaussian');
+
+                    const blurCanvas = document.createElement('canvas');
+                    blurCanvas.width = blurred.width;
+                    blurCanvas.height = blurred.height;
+                    const blurCtx = blurCanvas.getContext('2d');
+                    blurCtx.drawImage(blurred, 0, 0);
+                    const blurData = blurCtx.getImageData(0, 0, blurCanvas.width, blurCanvas.height).data;
+
+                    // Then apply Sobel operator
+                    const sobelX = [
+                        [-1, 0, 1],
+                        [-2, 0, 2],
+                        [-1, 0, 1]
+                    ];
+                    const sobelY = [
+                        [-1, -2, -1],
+                        [0, 0, 0],
+                        [1, 2, 1]
+                    ];
+
+                    const gradientMagnitude = new Array(data.length / 4).fill(0);
+                    const gradientDirection = new Array(data.length / 4).fill(0);
+
+                    for (let y = 1; y < blurCanvas.height - 1; y++) {
+                        for (let x = 1; x < blurCanvas.width - 1; x++) {
+                            const idx = (y * blurCanvas.width + x) * 4;
+                            let gx = 0;
+                            let gy = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * blurCanvas.width + (x + kx)) * 4;
+                                    const weightX = sobelX[ky + 1][kx + 1];
+                                    const weightY = sobelY[ky + 1][kx + 1];
+                                    gx += blurData[kidx] * weightX;
+                                    gy += blurData[kidx] * weightY;
+                                }
+                            }
+
+                            const magnitude = Math.sqrt(gx * gx + gy * gy);
+                            gradientMagnitude[y * blurCanvas.width + x] = magnitude;
+                            gradientDirection[y * blurCanvas.width + x] = Math.atan2(gy, gx);
+                        }
+                    }
+
+                    // Non-maximum suppression (simplified)
+                    for (let y = 1; y < blurCanvas.height - 1; y++) {
+                        for (let x = 1; x < blurCanvas.width - 1; x++) {
+                            const idx = y * blurCanvas.width + x;
+                            const angle = gradientDirection[idx];
+                            const mag = gradientMagnitude[idx];
+
+                            let neighbor1 = 0;
+                            let neighbor2 = 0;
+
+                            // Round angle to 0, 45, 90, or 135 degrees
+                            const angleDeg = (angle * 180 / Math.PI + 180) % 180;
+
+                            if ((angleDeg <= 22.5 || angleDeg > 157.5)) {
+                                // Horizontal
+                                neighbor1 = gradientMagnitude[y * blurCanvas.width + (x - 1)];
+                                neighbor2 = gradientMagnitude[y * blurCanvas.width + (x + 1)];
+                            } else if (angleDeg > 22.5 && angleDeg <= 67.5) {
+                                // Diagonal 1
+                                neighbor1 = gradientMagnitude[(y - 1) * blurCanvas.width + (x + 1)];
+                                neighbor2 = gradientMagnitude[(y + 1) * blurCanvas.width + (x - 1)];
+                            } else if (angleDeg > 67.5 && angleDeg <= 112.5) {
+                                // Vertical
+                                neighbor1 = gradientMagnitude[(y - 1) * blurCanvas.width + x];
+                                neighbor2 = gradientMagnitude[(y + 1) * blurCanvas.width + x];
+                            } else {
+                                // Diagonal 2
+                                neighbor1 = gradientMagnitude[(y - 1) * blurCanvas.width + (x - 1)];
+                                neighbor2 = gradientMagnitude[(y + 1) * blurCanvas.width + (x + 1)];
+                            }
+
+                            if (mag >= neighbor1 && mag >= neighbor2) {
+                                processedData[idx * 4] = mag > 50 ? 255 : 0;
+                                processedData[idx * 4 + 1] = mag > 50 ? 255 : 0;
+                                processedData[idx * 4 + 2] = mag > 50 ? 255 : 0;
+                            } else {
+                                processedData[idx * 4] = 0;
+                                processedData[idx * 4 + 1] = 0;
+                                processedData[idx * 4 + 2] = 0;
+                            }
+                        }
+                    }
+                    break;
+
+                case 'adaptive':
+                    // Adaptive thresholding (simplified)
+                    const blockSize = 11;
+                    const C = 2;
+
+                    for (let y = 0; y < canvas.height; y++) {
+                        for (let x = 0; x < canvas.width; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+
+                            // Calculate local threshold (simplified)
+                            let sum = 0;
+                            let count = 0;
+
+                            for (let ky = -Math.floor(blockSize / 2); ky <= Math.floor(blockSize / 2); ky++) {
+                                for (let kx = -Math.floor(blockSize / 2); kx <= Math.floor(blockSize / 2); kx++) {
+                                    const ny = y + ky;
+                                    const nx = x + kx;
+
+                                    if (ny >= 0 && ny < canvas.height && nx >= 0 && nx < canvas.width) {
+                                        const nidx = (ny * canvas.width + nx) * 4;
+                                        sum += data[nidx];
+                                        count++;
+                                    }
+                                }
+                            }
+
+                            const localThreshold = Math.floor(sum / count) - C;
+                            const value = data[idx] > localThreshold ? 255 : 0;
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+
+                case 'otsuAdaptive':
+                    // Simplified adaptive Otsu (not a real implementation)
+                    for (let y = 0; y < canvas.height; y++) {
+                        for (let x = 0; x < canvas.width; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            const value = data[idx] > 128 ? 255 : 0; // Simplified
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+
+                case 'iterative':
+                    // Iterative thresholding
+                    if (threshold === null) threshold = 128;
+                    let newThreshold = threshold;
+                    let deltaMin = 1;
+
+                    do {
+                        const oldThreshold = newThreshold;
+                        let sum1 = 0;
+                        let count1 = 0;
+                        let sum2 = 0;
+                        let count2 = 0;
+
+                        for (let i = 0; i < data.length; i += 4) {
+                            if (data[i] > oldThreshold) {
+                                sum1 += data[i];
+                                count1++;
+                            } else {
+                                sum2 += data[i];
+                                count2++;
+                            }
+                        }
+
+                        const mean1 = count1 > 0 ? sum1 / count1 : 0;
+                        const mean2 = count2 > 0 ? sum2 / count2 : 0;
+                        newThreshold = (mean1 + mean2) / 2;
+
+                        if (Math.abs(newThreshold - oldThreshold) < deltaMin) {
+                            break;
+                        }
+                    } while (true);
+
+                    for (let i = 0; i < data.length; i += 4) {
+                        const value = data[i] > newThreshold ? 255 : 0;
+                        processedData[i] = value;
+                        processedData[i + 1] = value;
+                        processedData[i + 2] = value;
+                    }
+                    break;
+            }
+
+            ctx.putImageData(new ImageData(processedData, canvas.width, canvas.height), 0, 0);
+
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        // Apply morphology operations
+        function applyMorphology(image, type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Create a copy for processing
+            const processedData = new Uint8ClampedArray(data.length);
+            processedData.set(data);
+
+            // Apply morphology operation
+            switch (type) {
+                case 'opening':
+                    // Erosion followed by dilation
+                    processedData.set(applyErosion(data, canvas.width, canvas.height));
+                    processedData.set(applyDilation(processedData, canvas.width, canvas.height));
+                    break;
+
+                case 'closing':
+                    // Dilation followed by erosion
+                    processedData.set(applyDilation(data, canvas.width, canvas.height));
+                    processedData.set(applyErosion(processedData, canvas.width, canvas.height));
+                    break;
+
+                case 'erosion':
+                    processedData.set(applyErosion(data, canvas.width, canvas.height));
+                    break;
+
+                case 'dilation':
+                    processedData.set(applyDilation(data, canvas.width, canvas.height));
+                    break;
+
+                case 'hitmiss':
+                    // Simplified hit-or-miss transform
+                    const kernel = [
+                        [0, 1, 0],
+                        [1, 1, 1],
+                        [0, 1, 0]
+                    ];
+
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let match = true;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const kVal = kernel[ky + 1][kx + 1];
+
+                                    if (kVal === 1 && data[kidx] !== 255) {
+                                        match = false;
+                                        break;
+                                    } else if (kVal === 0 && data[kidx] !== 0) {
+                                        match = false;
+                                        break;
+                                    }
+                                }
+                                if (!match) break;
+                            }
+
+                            const value = match ? 255 : 0;
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+            }
+
+            ctx.putImageData(new ImageData(processedData, canvas.width, canvas.height), 0, 0);
+
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        // Apply erosion
+        function applyErosion(data, width, height) {
+            const eroded = new Uint8ClampedArray(data.length);
+
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const idx = (y * width + x) * 4;
+                    let minVal = 255;
+
+                    for (let ky = -1; ky <= 1; ky++) {
+                        for (let kx = -1; kx <= 1; kx++) {
+                            const kidx = ((y + ky) * width + (x + kx)) * 4;
+                            minVal = Math.min(minVal, data[kidx]);
+                        }
+                    }
+
+                    eroded[idx] = minVal;
+                    eroded[idx + 1] = minVal;
+                    eroded[idx + 2] = minVal;
+                    eroded[idx + 3] = data[idx + 3];
+                }
+            }
+
+            return eroded;
+        }
+
+        // Apply dilation
+        function applyDilation(data, width, height) {
+            const dilated = new Uint8ClampedArray(data.length);
+
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const idx = (y * width + x) * 4;
+                    let maxVal = 0;
+
+                    for (let ky = -1; ky <= 1; ky++) {
+                        for (let kx = -1; kx <= 1; kx++) {
+                            const kidx = ((y + ky) * width + (x + kx)) * 4;
+                            maxVal = Math.max(maxVal, data[kidx]);
+                        }
+                    }
+
+                    dilated[idx] = maxVal;
+                    dilated[idx + 1] = maxVal;
+                    dilated[idx + 2] = maxVal;
+                    dilated[idx + 3] = data[idx + 3];
+                }
+            }
+
+            return dilated;
+        }
+
+        // Select objects
+        function selectObjects(image, type) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Create a binary image first
+            const binaryData = new Uint8ClampedArray(data.length);
+            for (let i = 0; i < data.length; i += 4) {
+                const value = data[i] > 128 ? 255 : 0;
+                binaryData[i] = value;
+                binaryData[i + 1] = value;
+                binaryData[i + 2] = value;
+                binaryData[i + 3] = 255;
+            }
+
+            // Find contours (simplified)
+            const contours = findContours(binaryData, canvas.width, canvas.height);
+
+            if (contours.length === 0) {
+                return image; // No contours found
+            }
+
+            // Select object based on type
+            let selectedContour = null;
+
+            switch (type) {
+                case 'largest':
+                    // Find contour with maximum area
+                    let maxArea = 0;
+                    contours.forEach(contour => {
+                        const area = calculateContourArea(contour);
+                        if (area > maxArea) {
+                            maxArea = area;
+                            selectedContour = contour;
+                        }
+                    });
+                    break;
+
+                case 'central':
+                    // Find contour closest to center
+                    const centerX = canvas.width / 2;
+                    const centerY = canvas.height / 2;
+                    let minDist = Infinity;
+
+                    contours.forEach(contour => {
+                        // Calculate centroid
+                        let sumX = 0;
+                        let sumY = 0;
+                        let count = 0;
+
+                        contour.forEach(point => {
+                            sumX += point.x;
+                            sumY += point.y;
+                            count++;
+                        });
+
+                        const centroidX = sumX / count;
+                        const centroidY = sumY / count;
+                        const dist = Math.sqrt(Math.pow(centroidX - centerX, 2) + Math.pow(centroidY - centerY, 2));
+
+                        if (dist < minDist) {
+                            minDist = dist;
+                            selectedContour = contour;
+                        }
+                    });
+                    break;
+
+                case 'closed':
+                    // Select all closed contours
+                    // Select all closed contours
+                    selectedContour = [];
+                    contours.forEach(contour => {
+                        if (isContourClosed(contour)) {
+                            selectedContour.push(...contour);
+                        }
+                    });
+                    break;
+            }
+
+            if (!selectedContour) {
+                return image; // No contour selected
+            }
+
+            // Create mask from selected contour
+            const mask = new Uint8ClampedArray(data.length).fill(0);
+
+            if (Array.isArray(selectedContour[0])) {
+                // Single contour
+                const points = selectedContour;
+                const minX = Math.min(...points.map(p => p.x));
+                const maxX = Math.max(...points.map(p => p.x));
+                const minY = Math.min(...points.map(p => p.y));
+                const maxY = Math.max(...points.map(p => p.y));
+
+                // Simple fill (for demo purposes)
+                for (let y = minY; y <= maxY; y++) {
+                    for (let x = minX; x <= maxX; x++) {
+                        const idx = (y * canvas.width + x) * 4;
+                        mask[idx] = 255;
+                        mask[idx + 1] = 255;
+                        mask[idx + 2] = 255;
+                    }
+                }
+            } else {
+                // Multiple contours (for closed option)
+                selectedContour.forEach(point => {
+                    const idx = (point.y * canvas.width + point.x) * 4;
+                    mask[idx] = 255;
+                    mask[idx + 1] = 255;
+                    mask[idx + 2] = 255;
+                });
+            }
+
+            // Apply mask to original image
+            const resultData = new Uint8ClampedArray(data.length);
+            for (let i = 0; i < data.length; i += 4) {
+                resultData[i] = mask[i] === 255 ? data[i] : 0;
+                resultData[i + 1] = mask[i + 1] === 255 ? data[i + 1] : 0;
+                resultData[i + 2] = mask[i + 2] === 255 ? data[i + 2] : 0;
+                resultData[i + 3] = 255;
+            }
+
+            ctx.putImageData(new ImageData(resultData, canvas.width, canvas.height), 0, 0);
+
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        function findContours(data, width, height) {
+            const contours = [];
+            const visited = new Array(width * height).fill(false);
+
+            const isWhite = (x, y) => {
+                const idx = (y * width + x) * 4;
+                return data[idx] === 255;
+            };
+
+            const isEdgePixel = (x, y) => {
+                if (!isWhite(x, y)) return false;
+                const neighbors = [
+                    [-1, -1],
+                    [0, -1],
+                    [1, -1],
+                    [-1, 0],
+                    [1, 0],
+                    [-1, 1],
+                    [0, 1],
+                    [1, 1],
+                ];
+                return neighbors.some(([dx, dy]) => {
+                    const nx = x + dx;
+                    const ny = y + dy;
+                    if (nx < 0 || ny < 0 || nx >= width || ny >= height) return true;
+                    return !isWhite(nx, ny);
+                });
+            };
+
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const idx = y * width + x;
+
+                    if (!visited[idx] && isWhite(x, y) && isEdgePixel(x, y)) {
+                        const contour = [];
+                        const queue = [{
+                            x,
+                            y
+                        }];
+                        visited[idx] = true;
+
+                        while (queue.length > 0) {
+                            const point = queue.shift();
+                            contour.push(point);
+
+                            const neighbors = [
+                                [-1, -1],
+                                [0, -1],
+                                [1, -1],
+                                [-1, 0],
+                                [1, 0],
+                                [-1, 1],
+                                [0, 1],
+                                [1, 1],
+                            ];
+
+                            for (const [dx, dy] of neighbors) {
+                                const nx = point.x + dx;
+                                const ny = point.y + dy;
+                                const nIdx = ny * width + nx;
+
+                                if (nx >= 0 && nx < width && ny >= 0 && ny < height &&
+                                    !visited[nIdx] && isWhite(nx, ny) && isEdgePixel(nx, ny)) {
+                                    visited[nIdx] = true;
+                                    queue.push({
+                                        x: nx,
+                                        y: ny
+                                    });
+                                }
+                            }
+                        }
+
+                        if (contour.length > 0) {
+                            contours.push(contour);
+                        }
+                    }
+                }
+            }
+
+            return contours;
+        }
+
+        // Calculate contour area (simplified)
+        function calculateContourArea(contour) {
+            // Simple approximation using bounding box area
+            if (contour.length === 0) return 0;
+
+            const minX = Math.min(...contour.map(p => p.x));
+            const maxX = Math.max(...contour.map(p => p.x));
+            const minY = Math.min(...contour.map(p => p.y));
+            const maxY = Math.max(...contour.map(p => p.y));
+
+            return (maxX - minX) * (maxY - minY);
+        }
+
+        // Check if contour is closed (simplified)
+        function isContourClosed(contour) {
+            if (contour.length < 3) return false;
+
+            // Check if first and last points are close
+            const first = contour[0];
+            const last = contour[contour.length - 1];
+            const dist = Math.sqrt(Math.pow(first.x - last.x, 2) + Math.pow(first.y - last.y, 2));
+
+            return dist < 5; // Arbitrary threshold
+        }
+
+        // Apply custom filter
+        function applyCustomFilter(image, kernel) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            // Create a copy for processing
+            const processedData = new Uint8ClampedArray(data.length);
+            processedData.set(data);
+
+            // Normalize kernel
+            let kernelSum = 0;
+            kernel.forEach(row => row.forEach(val => kernelSum += val));
+            if (kernelSum === 0) kernelSum = 1;
+
+            // Apply kernel
+            const kHeight = kernel.length;
+            const kWidth = kernel[0].length;
+            const kCenterY = Math.floor(kHeight / 2);
+            const kCenterX = Math.floor(kWidth / 2);
+
+            for (let y = kCenterY; y < canvas.height - kCenterY; y++) {
+                for (let x = kCenterX; x < canvas.width - kCenterX; x++) {
+                    const idx = (y * canvas.width + x) * 4;
+                    let sum = 0;
+
+                    for (let ky = -kCenterY; ky <= kCenterY; ky++) {
+                        for (let kx = -kCenterX; kx <= kCenterX; kx++) {
+                            const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                            const kVal = kernel[ky + kCenterY][kx + kCenterX];
+                            sum += data[kidx] * kVal;
+                        }
+                    }
+
+                    const value = Math.min(255, Math.max(0, sum / kernelSum));
+                    processedData[idx] = value;
+                    processedData[idx + 1] = value;
+                    processedData[idx + 2] = value;
+                }
+            }
+
+            ctx.putImageData(new ImageData(processedData, canvas.width, canvas.height), 0, 0);
+
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        // Função para aplicar o filtro Negativo
+        function applyNegativeFilter(image) {
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                // Inverte o valor de cada pixel (255 - valor)
+                data[i] = 255 - data[i];         // R (ou tom de cinza)
+                data[i + 1] = 255 - data[i + 1]; // G (ou tom de cinza)
+                data[i + 2] = 255 - data[i + 2]; // B (ou tom de cinza)
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        // Função para aplicar Ruído
+        function applyNoise(image, type, parameter) { // O 'parameter' pode ser 'amount' ou 'levels'
+            const canvas = document.createElement('canvas');
+            canvas.width = image.width;
+            canvas.height = image.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0);
+
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+
+            for (let i = 0; i < data.length; i += 4) {
+                const originalValue = data[i];
+                let newValue = originalValue;
+
+                switch (type) {
+                    case 'salt_pepper':
+                        if (Math.random() < (parameter / 100)) {
+                            newValue = Math.random() < 0.5 ? 0 : 255;
+                        }
+                        break;
+                    
+                    case 'gaussian':
+                        if (Math.random() < 0.5) { // Aplica com 50% de chance para não saturar a imagem
+                            // Box-Muller transform para uma distribuição normal mais realista
+                            const u1 = Math.random();
+                            const u2 = Math.random();
+                            const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
+                            // O 'parameter' controla o desvio padrão
+                            newValue = originalValue + z0 * parameter;
+                        }
+                        break;
+
+                    case 'uniform':
+                        // Adiciona um valor aleatório de um intervalo uniforme
+                        // O 'parameter' controla a largura do intervalo
+                        const uniformNoise = (Math.random() - 0.5) * parameter;
+                        newValue = originalValue + uniformNoise;
+                        break;
+
+                    case 'quantization':
+                        // Reduz o número de níveis de cinza
+                        const levels = parameter;
+                        const step = 255 / (levels - 1);
+                        newValue = Math.round(Math.round(originalValue / step) * step);
+                        break;
+
+                    case 'speckle':
+                        // Ruído multiplicativo
+                        const speckleNoise = (Math.random() - 0.5) * (parameter / 100);
+                        newValue = originalValue * (1 + speckleNoise);
+                        break;
+
+                    case 'poisson':
+                        // Simulação de ruído de Poisson (shot noise)
+                        // A variância é igual à média (intensidade do pixel)
+                        // O 'parameter' aqui age como um fator de escala
+                        const lambda = originalValue * (parameter / 100);
+                        let k = 0;
+                        let p = 1;
+                        const L = Math.exp(-lambda);
+                        do {
+                            k++;
+                            p *= Math.random();
+                        } while (p > L);
+                        newValue = originalValue + (k - 1);
+                        break;
+                }
+
+                // Garante que o valor do pixel permaneça entre 0 e 255
+                const finalValue = Math.max(0, Math.min(255, newValue));
+                data[i] = finalValue;
+                data[i + 1] = finalValue;
+                data[i + 2] = finalValue;
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        // Add operation to pipeline
+        async function addOperationToPipeline() {
+            const type = operationType.value;
+            if (type === 'none') return;
+
+            let operation = {
+                type
+            };
+
+            // Hide result section if it was previously shown
+            document.getElementById('pipelineResultSection').classList.remove('hidden');
+
+            // Get operation parameters
+            switch (type) {
+                 
+                case 'fourier_filter':
+                    operation.subtype = document.getElementById('fourierFilterType').value;
+                    operation.cutoff = parseInt(document.getElementById('fourierCutoff').value);
+                    break;
+
+                case 'noise':
+                    operation.subtype = document.getElementById('noiseType').value;
+                    
+                    // Verifica qual controle existe e salva seu valor
+                    if (operation.subtype === 'quantization') {
+                        operation.parameter = parseInt(document.getElementById('quantizationLevels').value);
+                    } else {
+                        operation.parameter = parseInt(document.getElementById('noiseAmount').value);
+                    }
+                    break;
+                case 'lowpass':
+                    operation.subtype = document.getElementById('lowpassType').value;
+                    break;
+                case 'highpass':
+                    operation.subtype = document.getElementById('highpassType').value;
+                    break;
+                case 'segmentation':
+                    operation.subtype = document.getElementById('segmentationType').value;
+                    if (operation.subtype === 'simple' || operation.subtype === 'iterative') {
+                        operation.threshold = parseInt(document.getElementById('thresholdValue').value);
+                    }
+                    break;
+                case 'morphology':
+                    operation.subtype = document.getElementById('morphologyType').value;
+                    break;
+                case 'object':
+                    operation.subtype = document.getElementById('objectType').value;
+                    break;
+                case 'custom':
+                    operation.kernel = document.getElementById('customKernel').value;
+                    break;
+            }
+
+            pipeline.push(operation);
+            await updatePipelineDisplay(); 
+            updatePreview();
+        }
+
+        // Remove operation from pipeline
+        async function removeOperation(index) {
+            pipeline.splice(index, 1);
+            await updatePipelineDisplay();
+            updatePreview();
+        }
+
+        async function updatePipelineDisplay() {
+            const container = document.getElementById('pipelineOperations');
+            const imgResultEl = document.getElementById('pipelineResult');
+            container.innerHTML = '';
+
+            // Lógica de exibição dos itens (sem alterações)
+            if (pipeline.length === 0) {
+                container.innerHTML = '<p class="text-gray-400">Nenhuma operação adicionada ainda.</p>';
+                if (grayImage) { imgResultEl.src = grayImage.src; currentImage = grayImage; }
+                return;
+            }
+            pipeline.forEach((op, index) => {
+                const opDiv = document.createElement('div');
+                opDiv.className = 'flex items-center justify-between p-2 bg-gray-800 rounded mb-2';
+                let desc = op.type.replace(/_/g, ' ');
+                if (op.subtype) desc += ` (${op.subtype})`;
+                if (op.threshold !== undefined) desc += ` [limiar: ${op.threshold}]`;
+                if (op.kernel) desc += ` [kernel: ${op.kernel}]`;
+                if (op.type === 'noise') {
+                    const label = op.subtype === 'quantization' ? 'níveis' : 'intensidade';
+                    desc += ` [${label}: ${op.parameter}]`;
+                }
+                if (op.type === 'fourier_filter') { desc += ` [raio: ${op.cutoff}]`; }
+                opDiv.innerHTML = `<span class="capitalize">${desc}</span><button class="text-red-500" onclick="removeOperation(${index})">Remover</button>`;
+                container.appendChild(opDiv);
+            });
+
+            // Lógica de processamento do pipeline
+            let processedImage = grayImage;
+            for (const op of pipeline) {
+                // [CORREÇÃO CHAVE]
+                // Passa 'true' para indicar que esta é a execução principal do pipeline.
+                processedImage = await processSingleOperation(op, processedImage, true);
+            }
+
+            imgResultEl.src = processedImage.src;
+            currentImage = processedImage;
+        }
+
+        // Função para limpar o pipeline
+        async function clearPipeline(){
+            pipeline = [];
+            
+            currentImage = grayImageEl; // Reseta para a imagem em tons de cinza
+            fourierComplexData = null; // Reseta os dados complexos do Fourier
+            fourierImageSize = null; // Reseta o tamanho da imagem do Fourier
+
+            await updatePipelineDisplay();
+            updatePreview();
+        }
+
+
+        function updateDescriptorResults() {
+            const type = descriptorSelect.value;
+            let html = '';
+
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                const lbpImageButton = document.getElementById('lbpImageButton');
+                
+                lbpImageButton.classList.add('hidden');
+
+                // Destroy existing charts if they exist
+                if (lbpImageChart) {
+                    lbpImageChart.destroy();
+                }
+
+                switch (type) {
+                    case 'color':
+                        // Média e desvio Padrão dos tons de cinza
+                        let sum = 0;
+                        let count = 0;
+                        let sqSum = 0;
+                        for (let i = 0; i < imageData.length; i += 4) {
+                            sum += imageData[i];
+                            sqSum += imageData[i] * imageData[i];
+                            count++;
+                        }
+                        const mean = (sum / count).toFixed(2);
+                        const variance = (sqSum / count) - (mean * mean);
+
+                        // Momentos de Gray
+                        const moments = getGrayMoments(document.getElementById('normalizedHistogram').getContext('2d').getImageData(0, 0, 256, 1).data);
+
+                        html = `<p>Média dos tons de cinza: <b>${mean}</b></p>`;
+                        html += `<p>Desvio Padrão dos tons de cinza: <b>${Math.sqrt(variance).toFixed(2)}</b></p>`;
+                        html += `<p>Momentos de Gray: <b><br/> m1: ${moments.mean.toExponential(3)}<br/> m2: ${moments.m2.toExponential(3)}<br/> m3: ${moments.m3.toExponential(3)}<br/> m4: ${moments.m4.toFixed(2)}</b></p>`;
+
+                        break;
+
+                    case 'shape':
+                        // Simples: conta quantos pixels são "brancos" (acima de 128) = área dos objetos
+                        let area = 0;
+                        for (let i = 0; i < imageData.length; i += 4) {
+                            if (imageData[i] > 128) area++;
+                        }
+
+                        // Momento de Hu da imagem binária
+                        const binaryCanvas = document.createElement('canvas');
+                        binaryCanvas.width = img.width;
+                        binaryCanvas.height = img.height;
+                        const binaryCtx = binaryCanvas.getContext('2d');
+                        binaryCtx.drawImage(img, 0, 0);
+                        const binaryImageData = binaryCtx.getImageData(0, 0, binaryCanvas.width, binaryCanvas.height).data;
+                        const huMoments = getHuMoments(binaryCanvas);
+
+                        // Contornos e propriedades
+                        const contours = findContours(binaryImageData, binaryCanvas.width, binaryCanvas.height);
+                        let contourProps = {};
+                        if (contours.length > 0) {
+                            contourProps = getContourProps(contours[0]);
+                        }
+                        // Resultados
+                        html = `<p>Área (pixels acima de 128): <b>${area}</b></p>`;
+                        html += `<p>Momentos de Hu: <b><br/> h1: ${huMoments[0].toExponential(3)}<br/> h2: ${huMoments[1].toExponential(3)}<br/> h3: ${huMoments[2].toExponential(3)}<br/> h4: ${huMoments[3].toExponential(3)}</b></p>`;
+
+                        html += `<p>Contornos encontrados: <b>${contours.length}</b></p>`;
+                        if (contours.length > 0) {
+                            const contourProps = getContourProps(contours[0]);
+                            html += `<p>Propriedades do contorno: <b><br/> Área: ${contourProps.area}<br/> Perímetro: ${contourProps.perimeter.toFixed(2)}<br/> Circularidade: ${contourProps.circularity.toFixed(2)}</b></p>`;
+                        }
+                        break;
+
+                    case 'texture':
+                        // Simples: desvio padrão dos tons de cinza (variação/contraste)
+                        let soma = 0,
+                            soma2 = 0,
+                            n = 0;
+                        for (let i = 0; i < imageData.length; i += 4) {
+                            soma += imageData[i];
+                            soma2 += imageData[i] * imageData[i];
+                            n++;
+                        }
+                        const mediaT = soma / n;
+                        const variancia = soma2 / n - mediaT * mediaT;
+                        const desvio = Math.sqrt(variancia).toFixed(2);
+                        const descriptorImage = document.getElementById('descriptorImage');
+                        const lbpImage = document.getElementById('lbpImage').getContext('2d');;
+                        
+                        // LBP (Local Binary Patterns)
+                        const lbpHist = getLBP(canvas);
+                        
+
+                        html = `<p>Desvio padrão dos tons de cinza (textura/contraste): <b>${desvio}</b></p>`;
+                        html += `<p>Histograma LBP (256 padrões):</p>`;
+                        lbpImageChart = new Chart(lbpImage, {
+                            type: 'bar',
+                            data: {
+                                labels: Array.from({ length: 256 }, (_, i) => i),
+                                datasets: [{
+                                    label: 'Histograma LBP',
+                                    data: lbpHist,
+                                    backgroundColor: 'rgba(124, 58, 237, 0.6)',
+                                    borderColor: 'rgba(124, 58, 237, 1)',
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: {
+                                scales: {
+                                    x: {
+                                        title: {
+                                            display: true,
+                                            text: 'Padrão LBP'
+                                        }
+                                    },
+                                    y: {
+                                        title: {
+                                            display: true,
+                                            text: 'Frequência'
+                                        }
+                                    }
+                                }
+                            },
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                title: {
+                                    display: true,
+                                    text: 'Histograma LBP'
+                                }
+                            }
+                        });
+
+                        // Download button for LBP image
+                        lbpImageButton.classList.remove('hidden');
+
+                        lbpImageButton.onclick = function() {
+                            downloadImageFromCanvas(document.getElementById('lbpImage'), 'histograma_lbp.png');
+                        };
+                        
+                        break;
+
+                    default:
+                        html = '<p>Nenhum descritor selecionado.</p>';
+                }
+
+                descriptorResults.innerHTML = html;
+            };
+            img.src = grayImageEl.src;
+        }
+
+        function applyMaskToOriginal() {
+            if (!originalImage || !pipelineResultEl.src) {
+                alert("É necessário ter uma imagem original e um resultado no pipeline para aplicar a máscara.");
+                return;
+            }
+
+            document.getElementById('maskedImageSection').classList.remove('hidden');
+
+            const maskImage = new Image();
+            maskImage.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = originalImage.width;
+                canvas.height = originalImage.height;
+                const ctx = canvas.getContext('2d');
+
+                // 1. Desenha a imagem original para obter seus dados de pixel
+                ctx.drawImage(originalImage, 0, 0);
+                const originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const originalData = originalImageData.data;
+
+                // 2. Desenha a máscara em um canvas temporário para obter seus dados
+                const maskCanvas = document.createElement('canvas');
+                maskCanvas.width = maskImage.width;
+                maskCanvas.height = maskImage.height;
+                const maskCtx = maskCanvas.getContext('2d');
+                maskCtx.drawImage(maskImage, 0, 0);
+                const maskData = maskCtx.getImageData(0, 0, maskCanvas.width, maskCanvas.height).data;
+
+                // 3. Cria a imagem de resultado
+                const resultImageData = ctx.createImageData(canvas.width, canvas.height);
+                const resultData = resultImageData.data;
+
+                for (let i = 0; i < originalData.length; i += 4) {
+                    // 4. Verifica o valor do pixel da máscara (usamos o canal vermelho, pois é P&B)
+                    // Se o pixel da máscara for branco (valor > 128), mantém o pixel original
+                    if (maskData[i] > 128) {
+                        resultData[i] = originalData[i];         // R
+                        resultData[i + 1] = originalData[i + 1]; // G
+                        resultData[i + 2] = originalData[i + 2]; // B
+                        resultData[i + 3] = 255;                 // Alpha
+                    } else {
+                        // Se for preto, o pixel do resultado também fica preto
+                        resultData[i] = 0;
+                        resultData[i + 1] = 0;
+                        resultData[i + 2] = 0;
+                        resultData[i + 3] = 255;
+                    }
+                }
+
+                // 5. Coloca os dados do resultado no canvas e exibe na tela
+                ctx.putImageData(resultImageData, 0, 0);
+                maskedImageEl.src = canvas.toDataURL();
+            };
+            // Define o src da imagem da máscara para iniciar o processo
+            maskImage.src = pipelineResultEl.src;
+        }
+
+        // Função para baixar imagem a partir de um objeto Image
+        function downloadImage(image, filename) {
+            if (!image || !image.src) {
+                alert("Imagem não encontrada.");
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = image.src;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Função para baixar imagem a partir de um elemento <canvas> 
+        function downloadImageFromCanvas(canvas, filename) {
+            if (!canvas || !(canvas instanceof HTMLCanvasElement)) {
+                alert("Canvas não encontrado.");
+                return;
+            }
+
+            const link = document.createElement('a');
+            link.href = canvas.toDataURL();
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function getGrayMoments(histogram) {
+            const total = histogram.reduce((a, b) => a + b, 0);
+            const mean = histogram.reduce((acc, h, i) => acc + i * h, 0) / total;
+            const m2 = histogram.reduce((acc, h, i) => acc + h * Math.pow(i - mean, 2), 0) / total;
+            const m3 = histogram.reduce((acc, h, i) => acc + h * Math.pow(i - mean, 3), 0) / total;
+            const m4 = histogram.reduce((acc, h, i) => acc + h * Math.pow(i - mean, 4), 0) / total;
+            return {
+                mean,
+                m2,
+                m3,
+                m4
+            };
+        }
+
+        function getHuMoments(binaryCanvas) {
+            const ctx = binaryCanvas.getContext('2d');
+            const imageData = ctx.getImageData(0, 0, binaryCanvas.width, binaryCanvas.height);
+            const width = binaryCanvas.width;
+            const height = binaryCanvas.height;
+            const moments = calculateRawMoments(imageData, width, height);
+            return computeHu(moments);
+        }
+
+        function getContourProps(contour) {
+            const area = contour.length;
+
+            let perimeter = 0;
+            for (let i = 1; i < contour.length; i++) {
+                const dx = contour[i].x - contour[i - 1].x;
+                const dy = contour[i].y - contour[i - 1].y;
+                perimeter += Math.sqrt(dx * dx + dy * dy);
+            }
+
+            const circularity = 4 * Math.PI * area / (perimeter * perimeter);
+            return {
+                area,
+                perimeter,
+                circularity
+            };
+        }
+
+        function getLBP(canvas) {
+            const ctx = canvas.getContext('2d');
+            const {
+                width,
+                height
+            } = canvas;
+            const imageData = ctx.getImageData(0, 0, width, height);
+            const data = imageData.data;
+            const lbpHist = new Array(256).fill(0);
+
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const centerIdx = (y * width + x) * 4;
+                    const centerVal = data[centerIdx];
+
+                    let code = 0;
+                    const offsets = [
+                        [-1, -1],
+                        [0, -1],
+                        [1, -1],
+                        [1, 0],
+                        [1, 1],
+                        [0, 1],
+                        [-1, 1],
+                        [-1, 0]
+                    ];
+
+                    offsets.forEach(([dx, dy], i) => {
+                        const ni = ((y + dy) * width + (x + dx)) * 4;
+                        if (data[ni] >= centerVal) {
+                            code |= (1 << (7 - i));
+                        }
+                    });
+
+                    lbpHist[code]++;
+                }
+            }
+
+            return lbpHist;
+        }
+
+        // Calcula os momentos espaciais (m00, m10, m01, etc.)
+        function calculateRawMoments(imageData, width, height) {
+            const data = imageData.data;
+            const moments = {
+                m00: 0,
+                m10: 0,
+                m01: 0,
+                m11: 0,
+                m20: 0,
+                m02: 0,
+                m30: 0,
+                m03: 0,
+                m12: 0,
+                m21: 0
+            };
+
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const idx = (y * width + x) * 4;
+                    const gray = data[idx]; // valor de cinza
+                    const value = gray > 128 ? 1 : 0;
+
+                    moments.m00 += value;
+                    moments.m10 += x * value;
+                    moments.m01 += y * value;
+                    moments.m11 += x * y * value;
+                    moments.m20 += x * x * value;
+                    moments.m02 += y * y * value;
+                    moments.m30 += x * x * x * value;
+                    moments.m03 += y * y * y * value;
+                    moments.m12 += x * y * y * value;
+                    moments.m21 += x * x * y * value;
+                }
+            }
+
+            return moments;
+        }
+        // Calcula os 7 momentos de Hu a partir dos momentos espaciais
+        function computeHu(m) {
+
+            if (m.m00 === 0) return Array(7).fill(0); // evita NaN
+
+            const x̄ = m.m10 / m.m00;
+            const ȳ = m.m01 / m.m00;
+
+            const μ = {};
+            // Momentos centrais de segunda e terceira ordem
+            μ.m20 = m.m20 - x̄ * m.m10;
+            μ.m02 = m.m02 - ȳ * m.m01;
+            μ.m11 = m.m11 - x̄ * m.m01;
+            μ.m30 = m.m30 - 3 * x̄ * m.m20 + 2 * x̄ * x̄ * m.m10;
+            μ.m03 = m.m03 - 3 * ȳ * m.m02 + 2 * ȳ * ȳ * m.m01;
+            μ.m12 = m.m12 - 2 * ȳ * m.m11 - x̄ * m.m02 + 2 * ȳ * ȳ * m.m10;
+            μ.m21 = m.m21 - 2 * x̄ * m.m11 - ȳ * m.m20 + 2 * x̄ * x̄ * m.m01;
+
+            // Momentos normalizados
+            const η = {};
+            const γ = (p, q) => Math.pow(m.m00, 1 + (p + q) / 2);
+            for (const key in μ) {
+                const [_, p, q] = key.match(/m(\d)(\d)/);
+                η[key] = μ[key] / γ(parseInt(p), parseInt(q));
+            }
+
+            // Cálculo dos 7 momentos de Hu
+            const hu = [];
+
+            hu[0] = η.m20 + η.m02;
+            hu[1] = Math.pow(η.m20 - η.m02, 2) + 4 * Math.pow(η.m11, 2);
+            hu[2] = Math.pow(η.m30 - 3 * η.m12, 2) + Math.pow(3 * η.m21 - η.m03, 2);
+            hu[3] = Math.pow(η.m30 + η.m12, 2) + Math.pow(η.m21 + η.m03, 2);
+            hu[4] = (η.m30 - 3 * η.m12) * (η.m30 + η.m12) * (Math.pow(η.m30 + η.m12, 2) - 3 * Math.pow(η.m21 + η.m03, 2)) +
+                (3 * η.m21 - η.m03) * (η.m21 + η.m03) * (3 * Math.pow(η.m30 + η.m12, 2) - Math.pow(η.m21 + η.m03, 2));
+            hu[5] = (η.m20 - η.m02) * (Math.pow(η.m30 + η.m12, 2) - Math.pow(η.m21 + η.m03, 2)) +
+                4 * η.m11 * (η.m30 + η.m12) * (η.m21 + η.m03);
+            hu[6] = (3 * η.m21 - η.m03) * (η.m30 + η.m12) * (Math.pow(η.m30 + η.m12, 2) - 3 * Math.pow(η.m21 + η.m03, 2)) -
+                (η.m30 - 3 * η.m12) * (η.m21 + η.m03) * (3 * Math.pow(η.m30 + η.m12, 2) - Math.pow(η.m21 + η.m03, 2));
+
+            return hu;
+        }
+    </script>
+</body>
+
+</html>
+
+</html>

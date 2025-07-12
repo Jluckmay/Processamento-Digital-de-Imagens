@@ -51,7 +51,11 @@ Este projeto é uma aplicação interativa para processamento digital de imagens
 - `main.py` — Interface principal Streamlit e lógica de controle.
 - `src` — Pasta com os arquivos das funções utilitárias para filtros, segmentação, morfologia, descritores, exibição e download.
 - `exemplo.png` — Imagem de exemplo para testes.
+- `index.html` - Interface web em HTML, CSS e JavaScript.
 
+## Interface Web
+
+Acesse em [jluckmay.github.io/PDI](jluckmay.github.io/PDI).
 
 ## Licença
 
