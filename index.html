@@ -235,6 +235,7 @@
         // Variável global para armazenar os dados da FFT
         let fourierComplexData = null;
         let fourierImageSize = 0;
+        let lastPipelineImageSrc = null;
 
         // Dicionário de filtros espaciais
         const SPATIAL_KERNELS = {
@@ -502,7 +503,7 @@
         }
 
         // Função principal que orquestra o processo
-        function calculateFourierSpectrum(image, updateGlobalState = false) {
+        function calculateFourierSpectrum(image, storeComplexData) {
             const nextPowerOf2 = (n) => Math.pow(2, Math.ceil(Math.log2(n)));
             const size = nextPowerOf2(Math.max(image.width, image.height));
 
@@ -511,8 +512,8 @@
             canvas.height = size;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(image, 0, 0, size, size);
+
             const imageData = ctx.getImageData(0, 0, size, size);
-            
             const complexData = new Array(size * size);
             for (let i = 0; i < imageData.data.length; i += 4) {
                 complexData[i / 4] = { re: imageData.data[i], im: 0 };
@@ -520,31 +521,22 @@
 
             fft2d(complexData, size, size);
 
-            // [CORREÇÃO CHAVE]
-            // Só atualiza a variável global se explicitamente instruído.
-            // Isso só acontecerá quando o pipeline principal for executado.
-            if (updateGlobalState) {
+            const magnitudeSpectrum = new Float32Array(size * size);
+            const shiftedSpectrum = fftShift(complexData, size, size);
+            for (let i = 0; i < shiftedSpectrum.length; i++) {
+                const mag = Math.sqrt(shiftedSpectrum[i].re**2 + shiftedSpectrum[i].im**2);
+                magnitudeSpectrum[i] = Math.log1p(mag);
+            }
+
+            if (storeComplexData) {
                 fourierComplexData = complexData;
                 fourierImageSize = size;
             }
 
-            const magnitudeSpectrum = new Float32Array(size * size);
-            for (let y = 0; y < size; y++) {
-                for (let x = 0; x < size; x++) {
-                    const index = y * size + x;
-                    const mag = Math.sqrt(complexData[index].re * complexData[index].re + complexData[index].im * complexData[index].im);
-                    const newX = (x + size / 2) % size;
-                    const newY = (y + size / 2) % size;
-                    magnitudeSpectrum[newY * size + newX] = Math.log1p(mag);
-                }
-            }
-
-            const normalized = normalizeForDisplay(magnitudeSpectrum, size, size);
-
-            // Retorna tanto a imagem da magnitude quanto os dados complexos locais.
+            // [MUDANÇA CHAVE] Retorna apenas os dados, não tenta mais criar uma imagem aqui.
             return {
-                magnitudeImage: createImageFromData(normalized, size, size),
-                complexData: complexData, // Retorna uma cópia local para uso no preview
+                magnitudeData: normalizeForDisplay(magnitudeSpectrum, size, size),
+                complexData: complexData,
                 width: size,
                 height: size
             };
@@ -830,6 +822,7 @@
         }
         
         // Função para aplicar a Transformada Inversa de Fourier (IFFT)
+         // Função para aplicar a Transformada Inversa de Fourier (IFFT)
         function applyInverseFourierTransform() {
             // 1. Verifica se existem dados complexos da última FFT para usar.
             if (!fourierComplexData) {
@@ -849,6 +842,18 @@
             return resultImage;
         }
 
+        function loadImageAsync(src) {
+            return new Promise((resolve, reject) => {
+                if (!src) {
+                    // Rejeita a promessa se o src for inválido para evitar erros 404.
+                    return reject(new Error("Image source is invalid."));
+                }
+                const img = new Image();
+                img.onload = () => resolve(img);
+                img.onerror = (err) => reject(err);
+                img.src = src;
+            });
+        }
 
         // Update operation options based on selected type
         function updateOperationOptions() {
@@ -856,8 +861,9 @@
             const optionsContainer = document.getElementById('operationOptions');
             let optionsHTML = '';
 
+            // O switch para criar o HTML permanece o mesmo.
             switch (type) {
-                 case 'fourier_filter':
+                case 'fourier_filter':
                     optionsHTML = `
                         <div class="mb-4">
                             <label for="fourierFilterType" class="block text-sm font-medium mb-2">Tipo de Filtro:</label>
@@ -871,17 +877,30 @@
                                     <option value="kernel_gaussian">Gaussiano 3x3</option>
                                     <option value="kernel_laplacian">Laplaciano</option>
                                     <option value="kernel_sobel_combined">Sobel (Magnitude Total)</option>
-                                    <option value="kernel_prewitt_combined">Prewitt (Magnitude Total)</option>
-                                    <option value="kernel_roberts_combined">Roberts (Magnitude Total)</option>
                                     <option value="custom_kernel">Kernel Personalizado (Textarea)</option>
                                 </optgroup>
                             </select>
                         </div>
-                        <div id="fourierOptionsContainer">
-                            <!-- As opções específicas do filtro serão inseridas aqui -->
-                        </div>
+                        <div id="fourierOptionsContainer"></div>
                     `;
                     break;
+                case 'noise':
+                    optionsHTML = `
+                        <div class="mb-4">
+                            <label for="noiseType" class="block text-sm font-medium mb-2">Tipo de Ruído:</label>
+                            <select id="noiseType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
+                                <option value="salt_pepper">Sal e Pimenta</option>
+                                <option value="gaussian">Gaussiano</option>
+                                <option value="uniform">Uniforme</option>
+                                <option value="quantization">Quantização</option>
+                                <option value="speckle">Speckle (Multiplicativo)</option>
+                                <option value="poisson">Poisson</option>
+                            </select>
+                        </div>
+                        <div id="noiseOptionsContainer"></div>
+                    `;
+                    break;
+                // ... Seus outros cases (lowpass, highpass, etc.) aqui ...
                 case 'lowpass':
                     optionsHTML = `
                         <div class="mb-4">
@@ -903,9 +922,17 @@
                             <label for="highpassType" class="block text-sm font-medium mb-2">Filtro Passa-Alta:</label>
                             <select id="highpassType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
                                 <option value="laplacian">Laplaciano</option>
-                                <option value="roberts">Roberts</option>
-                                <option value="prewitt">Prewitt</option>
-                                <option value="sobel">Sobel</option>
+                                <option value="roberts">Roberts (Magnitude Total)</option>
+                                <option value="sobel_combined">Sobel (Magnitude Total)</option>
+                                <option value="prewitt_combined">Prewitt (Magnitude Total)</option>
+                                <optgroup label="Componentes Separados">
+                                    <option value="roberts_x">Roberts (Apenas X)</option>
+                                    <option value="roberts_y">Roberts (Apenas Y)</option>
+                                    <option value="sobel_x">Sobel (Apenas X)</option>
+                                    <option value="sobel_y">Sobel (Apenas Y)</option>
+                                    <option value="prewitt_x">Prewitt (Apenas X)</option>
+                                    <option value="prewitt_y">Prewitt (Apenas Y)</option>
+                                </optgroup>
                             </select>
                         </div>
                     `;
@@ -968,22 +995,6 @@
                         </div>
                     `;
                     break;
-                case 'noise':
-                    optionsHTML = `
-                        <div class="mb-4">
-                            <label for="noiseType" class="block text-sm font-medium mb-2">Tipo de Ruído:</label>
-                            <select id="noiseType" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 block w-full p-2.5">
-                                <option value="salt_pepper">Sal e Pimenta</option>
-                                <option value="gaussian">Gaussiano</option>
-                                <option value="uniform">Uniforme</option>
-                                <option value="quantization">Quantização</option>
-                                <option value="speckle">Speckle (Multiplicativo)</option>
-                                <option value="poisson">Poisson</option>
-                            </select>
-                        </div>
-                        <div id="noiseOptionsContainer"></div>
-                    `;
-                    break;
                 default:
                     optionsHTML = '<p class="text-gray-400">Nenhuma opção adicional para esta operação.</p>';
             }
@@ -998,9 +1009,7 @@
                 const filterType = document.getElementById('fourierFilterType').value;
                 let fourierOptionsHTML = '';
 
-                // Verifica o tipo de filtro para decidir qual UI mostrar.
                 if (filterType === 'lowpass' || filterType === 'highpass') {
-                    // Mostra o slider APENAS para filtros ideais.
                     fourierOptionsHTML = `
                         <div class="mb-4">
                             <label for="fourierCutoff" class="block text-sm font-medium mb-2">Raio de Corte (D₀): <span id="fourierCutoffDisplay">30</span></label>
@@ -1008,25 +1017,69 @@
                         </div>
                     `;
                 } else if (filterType === 'custom_kernel') {
-                    // Mostra a textarea APENAS para o kernel personalizado.
                     fourierOptionsHTML = `
                         <div class="mb-4">
                             <label for="fourierKernelText" class="block text-sm font-medium mb-2">Insira o Kernel Espacial:</label>
-                            <textarea id="fourierKernelText" rows="3" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg block w-full p-2.5" placeholder="[[1]]">[[1]]</textarea>
+                            <textarea id="fourierKernelText" rows="3" class="bg-gray-600 border border-gray-500 text-white text-sm rounded-lg block w-full p-2.5" placeholder="[[1,-2,1],[0,0,0],[1,-2,1]]"></textarea>
                         </div>
                     `;
                 }
                 fourierContainer.innerHTML = fourierOptionsHTML;
 
-                // Adiciona listeners aos controles recém-criados
-                if (filterType === 'custom_kernel') {
-                    const kernelText = document.getElementById('fourierKernelText');
-                    if (kernelText) kernelText.addEventListener('input', updatePreview);
-                } else {
+                if (filterType === 'lowpass' || filterType === 'highpass') {
                     const cutoffSlider = document.getElementById('fourierCutoff');
                     if (cutoffSlider) {
                         cutoffSlider.addEventListener('input', (e) => {
                             const display = document.getElementById('fourierCutoffDisplay');
+                            if(display) display.textContent = e.target.value;
+                            updatePreview();
+                        });
+                    }
+                } else if (filterType === 'custom_kernel') {
+                    const kernelText = document.getElementById('fourierKernelText');
+                    if (kernelText) kernelText.addEventListener('input', updatePreview);
+                }
+                updatePreview();
+            }
+
+            // Função interna para configurar os controles de Ruído
+            function setupNoiseControls() {
+                const noiseContainer = document.getElementById('noiseOptionsContainer');
+                if (!noiseContainer) return;
+                const noiseType = document.getElementById('noiseType').value;
+                let noiseOptionsHTML = '';
+
+                if (noiseType === 'quantization') {
+                    noiseOptionsHTML = `
+                        <div class="mb-4">
+                            <label for="quantizationLevels" class="block text-sm font-medium mb-2">Níveis de Cinza: <span id="quantizationLevelsDisplay">8</span></label>
+                            <input type="range" id="quantizationLevels" min="2" max="64" value="8" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    `;
+                } else {
+                    noiseOptionsHTML = `
+                        <div class="mb-4">
+                            <label for="noiseAmount" class="block text-sm font-medium mb-2">Intensidade: <span id="noiseAmountDisplay">10</span>%</label>
+                            <input type="range" id="noiseAmount" min="1" max="100" value="10" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer">
+                        </div>
+                    `;
+                }
+                noiseContainer.innerHTML = noiseOptionsHTML;
+
+                if (noiseType === 'quantization') {
+                    const levelsSlider = document.getElementById('quantizationLevels');
+                    if (levelsSlider) {
+                        levelsSlider.addEventListener('input', (e) => {
+                            const display = document.getElementById('quantizationLevelsDisplay');
+                            if(display) display.textContent = e.target.value;
+                            updatePreview();
+                        });
+                    }
+                } else {
+                    const amountSlider = document.getElementById('noiseAmount');
+                    if (amountSlider) {
+                        amountSlider.addEventListener('input', (e) => {
+                            const display = document.getElementById('noiseAmountDisplay');
                             if(display) display.textContent = e.target.value;
                             updatePreview();
                         });
@@ -1038,243 +1091,199 @@
             // Adiciona os listeners principais com base no tipo de operação
             if (type === 'fourier_filter') {
                 const filterTypeSelect = document.getElementById('fourierFilterType');
-                // [CORREÇÃO DO ERRO] Verifica se o elemento existe antes de adicionar o listener.
                 if (filterTypeSelect) {
                     filterTypeSelect.addEventListener('change', setupFourierControls);
                     setupFourierControls(); // Chama uma vez para inicializar
                 }
             } else if (type === 'noise') {
-                // ... (seu código de listener para ruído)
+                const noiseTypeSelect = document.getElementById('noiseType');
+                if (noiseTypeSelect) {
+                    noiseTypeSelect.addEventListener('change', setupNoiseControls);
+                    setupNoiseControls(); // Chama uma vez para inicializar
+                }
             } else if (type === 'segmentation') {
-                // ... (seu código de listener para segmentação)
+                const segmentationTypeSelect = document.getElementById('segmentationType');
+                if (segmentationTypeSelect) segmentationTypeSelect.addEventListener('change', updatePreview);
+                const thresholdSlider = document.getElementById('thresholdValue');
+                if (thresholdSlider) thresholdSlider.addEventListener('input', (e) => {
+                    const display = document.getElementById('thresholdDisplay');
+                    if(display) display.textContent = e.target.value;
+                    updatePreview();
+                });
+            } else if (type === 'custom') {
+                const customKernelText = document.getElementById('customKernel');
+                if (customKernelText) customKernelText.addEventListener('input', updatePreview);
             } else {
                 const selects = optionsContainer.querySelectorAll('select');
-                selects.forEach(select => select.addEventListener('change', updatePreview));
+                selects.forEach(select => {
+                    select.addEventListener('change', updatePreview);
+                });
             }
+            
+            // A chamada inicial ao updatePreview é feita dentro das funções setup ou no final
+            // para garantir que os controles já existam.
+            if (type !== 'fourier_filter' && type !== 'noise') {
+                updatePreview();
+            }
+        }
+
+        function multiplyComplex(a, b) {
+            const re = a.re * b.re - a.im * b.im;
+            const im = a.re * b.im + a.im * b.re;
+            return { re, im };
         }
 
         // Update preview image based on selected operation
         async function updatePreview() {
-            // 1. Garante que a imagem base (a saída do pipeline atual) exista.
-            if (!currentImage) {
-                if (grayImage) {
-                    currentImage = grayImage;
-                } else {
-                    return; // Sai se não houver imagem alguma.
-                }
-            }
-            
-            document.getElementById('previewSection').classList.remove('hidden');
-
-            // 2. Pega a operação selecionada na UI.
             const operation = getCurrentOperationFromUI();
             if (!operation) {
-                previewImageEl.src = currentImage.src;
+                previewImageEl.src = '';
+                document.getElementById('previewSection').classList.add('hidden');
                 return;
             }
 
-            // 3. Usa 'await' para esperar a Promise da processSingleOperation ser resolvida.
-            // A imagem de entrada para o preview é SEMPRE a 'currentImage' (saída do pipeline).
-            const previewImageObject = await processSingleOperation(operation, currentImage);
+            document.getElementById('previewSection').classList.remove('hidden');
+            previewImageEl.src = '';
 
-            // 4. Exibe o resultado da operação no preview.
-            if (previewImageObject && previewImageObject.src) {
-                previewImageEl.src = previewImageObject.src;
-            }
-        }
+            try {
+                // Define a imagem base: usa o resultado do pipeline se existir,
+                // senão, usa a imagem cinza original.
+                const baseImageSrc = lastPipelineImageSrc || (grayImage ? grayImage.src : null);
 
-        function processSingleOperation(op, inputImage, isPipelineRun = false) {
-            return new Promise((resolve) => {
-                const imageToProcess = new Image();
-                imageToProcess.onload = () => {
-                    const resultImage = process(op, imageToProcess, isPipelineRun);
-                    resolve(resultImage);
-                };
-                imageToProcess.src = inputImage.src;
-            });
-
-            function process(operation, image, isPipelineRun) {
-                switch (operation.type) {
-                    case 'fourier_transform':
-                        // [CORREÇÃO CHAVE]
-                        // Passa 'isPipelineRun' para a função. Se for um preview, o estado global não será atualizado.
-                        const result = calculateFourierSpectrum(image, isPipelineRun);
-                        return result.magnitudeImage;
-
-                    case 'fourier_filter':
-                        const spectrum = calculateFourierSpectrum(image, false);
-                        const { width, height } = spectrum;
-
-                        // [NOVO] Bloco especial para filtros combinados
-                        if (operation.subtype === 'kernel_sobel_combined') {
-                            // 1. Pega as FFTs dos dois kernels (X e Y)
-                            const maskComplexX = createFourierMask('kernel_sobel_x', width, 0);
-                            const maskComplexY = createFourierMask('kernel_sobel_y', width, 0);
-
-                            // 2. Calcula Gx e Gy no domínio da frequência
-                            const Gx_freq = spectrum.complexData.map((pixel, i) => {
-                                const a = pixel;
-                                const b = maskComplexX[i];
-                                const re = a.re * b.re - a.im * b.im;
-                                const im = a.re * b.im + a.im * b.re;
-                                return { re, im };
-                            });
-
-                            // Calcula Gy com a máscara Y
-                            const Gy_freq = spectrum.complexData.map((pixel, i) => {
-                                const a = pixel;
-                                const b = maskComplexY[i];
-                                const re = a.re * b.re - a.im * b.im;
-                                const im = a.re * b.im + a.im * b.re;
-                                return { re, im };
-                            });
-
-                            // 3. Traz Gx e Gy de volta para o domínio do espaço
-                            ifft2d(Gx_freq, width, height);
-                            ifft2d(Gy_freq, width, height);
-
-                            // 4. Combina a magnitude no domínio do espaço
-                            const finalImageData = new Float32Array(width * height);
-                            for (let i = 0; i < finalImageData.length; i++) {
-                                const gx = Gx_freq[i].re; // Após a IFFT, o resultado está na parte real
-                                const gy = Gy_freq[i].re;
-                                const magnitude = Math.sqrt(gx * gx + gy * gy);
-                                finalImageData[i] = magnitude;
-                            }
-                            
-                            // 5. Retorna a imagem da magnitude
-                            return createImageFromData(finalImageData, width, height);
-
-                        } else if (operation.subtype === 'kernel_prewitt_combined') {
-                            // Lógica para o filtro Prewitt combinado (que já funciona)
-                            const maskComplexX = createFourierMask('kernel_prewitt_x', width, 0);
-                            const maskComplexY = createFourierMask('kernel_prewitt_y', width, 0);
-
-                            const Gx_freq = spectrum.complexData.map((pixel, i) => {
-                                const a = pixel;
-                                const b = maskComplexX[i];
-                                const re = a.re * b.re - a.im * b.im;
-                                const im = a.re * b.im + a.im * b.re;
-                                return { re, im };
-                            });
-
-                            const Gy_freq = spectrum.complexData.map((pixel, i) => {
-                                const a = pixel;
-                                const b = maskComplexY[i];
-                                const re = a.re * b.re - a.im * b.im;
-                                const im = a.re * b.im + a.im * b.re;
-                                return { re, im };
-                            });
-
-                            ifft2d(Gx_freq, width, height);
-                            ifft2d(Gy_freq, width, height);
-
-                            const finalImageData = new Float32Array(width * height);
-                            for (let i = 0; i < finalImageData.length; i++) {
-                                const gx = Gx_freq[i].re; // Após a IFFT, o resultado está na parte real
-                                const gy = Gy_freq[i].re;
-                                finalImageData[i] = Math.sqrt(gx * gx + gy * gy);
-                            }
-                            
-                            return createImageFromData(finalImageData, width, height);
-
-                        } else if (operation.subtype === 'kernel_roberts_combined') {
-                            // Lógica para o filtro Roberts combinado (que já funciona)
-                            const maskComplexX = createFourierMask('kernel_roberts_x', width, 0);
-                            const maskComplexY = createFourierMask('kernel_roberts_y', width, 0);
-
-                            const Gx_freq = spectrum.complexData.map((pixel, i) => {
-                                const a = pixel;
-                                const b = maskComplexX[i];
-                                const re = a.re * b.re - a.im * b.im;
-                                const im = a.re * b.im + a.im * b.re;
-                                return { re: re, im: im };
-                            });
-                            const Gy_freq = spectrum.complexData.map((pixel, i) => {
-                                const a = pixel;
-                                const b = maskComplexY[i];
-                                const re = a.re * b.re - a.im * b.im;
-                                const im = a.re * b.im + a.im * b.re;
-                                return { re: re, im: im };
-                            });
-                            ifft2d(Gx_freq, width, height);
-                            ifft2d(Gy_freq, width, height);
-                            const finalImageData = new Float32Array(width * height);
-                            for (let i = 0; i < finalImageData.length; i++) {
-                                const gx = Gx_freq[i].re; // Após a IFFT, o resultado está na parte real
-                                const gy = Gy_freq[i].re;
-                                finalImageData[i] = Math.sqrt(gx * gx + gy * gy);
-                            }
-                            return createImageFromData(finalImageData, width, height);
-                        }
-                        else if (operation.subtype.startsWith('kernel_') || operation.subtype === 'custom_kernel') {
-                            // Lógica para os outros filtros de kernel (que já funciona)
-                            let kernel;
-                            if (operation.subtype === 'custom_kernel') {
-                                try { kernel = JSON.parse(operation.kernel); } catch (e) { kernel = [[1]]; }
-                            }
-                            const maskComplex = createFourierMask(operation.subtype, width, 0, kernel);
-                            for (let i = 0; i < spectrum.complexData.length; i++) {
-                                const a = spectrum.complexData[i];
-                                const b = maskComplex[i];
-                                const re = a.re * b.re - a.im * b.im;
-                                const im = a.re * b.im + a.im * b.re;
-                                spectrum.complexData[i] = { re, im };
-                            }
-                        } else { 
-                            // Lógica para filtros ideais (que já funciona)
-                            const shiftedSpectrum = fftShift(spectrum.complexData, width, height);
-                            const maskIdeal = createFourierMask(operation.subtype, width, operation.cutoff);
-                            for (let i = 0; i < shiftedSpectrum.length; i++) {
-                                shiftedSpectrum[i].re *= maskIdeal[i];
-                                shiftedSpectrum[i].im *= maskIdeal[i];
-                            }
-                            spectrum.complexData = fftShift(shiftedSpectrum, width, height);
-                        }
-
-                        // Este bloco só será executado para os filtros não-combinados
-                        ifft2d(spectrum.complexData, width, height);
-                        return createImageFromComplexData(spectrum.complexData, width);
-                    case 'inverse_fourier_transform':
-                        return applyInverseFourierTransform();
-
-                    // O resto dos cases permanece o mesmo...
-                    case 'noise': return applyNoise(image, operation.subtype, operation.parameter);
-                    case 'lowpass': return applyLowpassFilter(image, operation.subtype);
-                    case 'highpass': return applyHighpassFilter(image, operation.subtype);
-                    case 'segmentation': return applySegmentation(image, operation.subtype, operation.threshold);
-                    case 'morphology': return applyMorphology(image, operation.subtype);
-                    case 'object': return selectObjects(image, operation.subtype);
-                    case 'custom': return applyCustomFilter(image, JSON.parse(operation.kernel));
-                    case 'negative': return applyNegativeFilter(image);
-                    default: return image;
+                // Se ainda assim não houver imagem base, não faz nada.
+                if (!baseImageSrc) {
+                    console.warn("Nenhuma imagem base para o preview.");
+                    return;
                 }
+
+                const imageToProcess = await loadImageAsync(baseImageSrc);
+                const previewImage = processSingleOperation(imageToProcess, operation, false);
+                
+                if (previewImage && previewImage.src) {
+                    previewImageEl.src = previewImage.src;
+                }
+            } catch (error) {
+                console.error("Erro ao gerar o preview:", error);
+                previewImageEl.src = '';
             }
         }
 
-        // Função para criar uma imagem a partir dos dados complexos da FFT
-        function createImageFromData(data, width, height) {
+        function createImageFromData(pixelData, width, height) {
             const canvas = document.createElement('canvas');
             canvas.width = width;
             canvas.height = height;
             const ctx = canvas.getContext('2d');
             const imageData = ctx.createImageData(width, height);
 
-            // Itera sobre o array de entrada (que tem 1 valor por pixel)
-            // e preenche o imageData (que precisa de 4 valores por pixel)
-            for (let i = 0; i < data.length; i++) {
-                const value = data[i];
-                const outIndex = i * 4;
-                imageData.data[outIndex] = value;     // R
-                imageData.data[outIndex + 1] = value; // G
-                imageData.data[outIndex + 2] = value; // B
-                imageData.data[outIndex + 3] = 255;   // A
+            for (let i = 0; i < pixelData.length; i++) {
+                const value = Math.max(0, Math.min(255, pixelData[i]));
+                imageData.data[i * 4] = value;
+                imageData.data[i * 4 + 1] = value;
+                imageData.data[i * 4 + 2] = value;
+                imageData.data[i * 4 + 3] = 255;
             }
-            
+
             ctx.putImageData(imageData, 0, 0);
-            const img = new Image();
-            img.src = canvas.toDataURL();
-            return img;
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
+        }
+
+        function processSingleOperation(image, operation, dados=true) {
+            // Ela retorna um objeto Image, que será carregado de forma assíncrona pelo pipeline.
+            switch (operation.type) {
+                case 'fourier_transform':
+                    const spectrum = calculateFourierSpectrum(image, dados); // Armazena os dados
+                    return createImageFromData(spectrum.magnitudeData, spectrum.width, spectrum.height);
+                
+                case 'inverse_fourier_transform':
+                    return applyInverseFourierTransform(); // Usa os dados globais
+
+                case 'fourier_filter':
+                    const spec = calculateFourierSpectrum(image, dados);
+                    const { width, height } = spec;
+                    if (operation.subtype === 'kernel_sobel_combined') {
+                        const maskComplexX = createFourierMask('kernel_sobel_x', width, 0);
+                        const maskComplexY = createFourierMask('kernel_sobel_y', width, 0);
+                        const Gx_freq = spec.complexData.map((p, i) => multiplyComplex(p, maskComplexX[i]));
+                        const Gy_freq = spec.complexData.map((p, i) => multiplyComplex(p, maskComplexY[i]));
+                        ifft2d(Gx_freq, width, height);
+                        ifft2d(Gy_freq, width, height);
+                        const finalImageData = new Float32Array(width * height);
+                        for (let i = 0; i < finalImageData.length; i++) {
+                            const mag = Math.sqrt(Gx_freq[i].re**2 + Gy_freq[i].re**2);
+                            finalImageData[i] = mag;
+                        }
+                        return createImageFromData(finalImageData, width, height);
+                    } else if (operation.subtype.startsWith('kernel_') || operation.subtype === 'custom_kernel') {
+                        let kernel;
+                        if (operation.subtype === 'custom_kernel') {
+                            try { kernel = JSON.parse(operation.kernel); } catch (e) { kernel = [[1]]; }
+                        }
+                        const maskComplex = createFourierMask(operation.subtype, width, 0, kernel);
+                        spec.complexData = spec.complexData.map((p, i) => multiplyComplex(p, maskComplex[i]));
+                    } else {
+                        const shiftedSpectrum = fftShift(spec.complexData, width, height);
+                        const maskIdeal = createFourierMask(operation.subtype, width, operation.cutoff);
+                        for (let i = 0; i < shiftedSpectrum.length; i++) {
+                            shiftedSpectrum[i].re *= maskIdeal[i];
+                            shiftedSpectrum[i].im *= maskIdeal[i];
+                        }
+                        spec.complexData = fftShift(shiftedSpectrum, width, height);
+                    }
+                    ifft2d(spec.complexData, width, height);
+                    return createImageFromComplexData(spec.complexData, width);
+
+                case 'noise':
+                    return applyNoise(image, operation.subtype, operation.parameter);
+                case 'negative':
+                    return applyNegativeFilter(image);
+                case 'lowpass':
+                    return applyLowpassFilter(image, operation.subtype);
+                case 'highpass':
+                    return applyHighpassFilter(image, operation.subtype);
+                case 'segmentation':
+                    return applySegmentation(image, operation.subtype, operation.threshold);
+                case 'morphology':
+                    return applyMorphology(image, operation.subtype);
+                case 'object':
+                    return selectObjects(image, operation.subtype);
+                case 'custom':
+                    let kernel;
+                    try { kernel = JSON.parse(operation.kernel); } catch (e) { return image; }
+                    return applyCustomFilter(image, kernel);
+                default:
+                    return image;
+            }
+        }
+
+        // Função para criar uma imagem a partir dos dados complexos da FFT
+        function createImageFromComplexData(complexData, size, isInverse = false) {
+            const dataToProcess = complexData.map(c => ({...c})); // Cria uma cópia para não modificar o original.
+
+            // [MUDANÇA CHAVE] Aplica a IFFT se necessário.
+            if (isInverse) {
+                ifft2d(dataToProcess, size, size);
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const imageData = ctx.createImageData(size, size);
+
+            for (let i = 0; i < dataToProcess.length; i++) {
+                const value = Math.max(0, Math.min(255, dataToProcess[i].re));
+                imageData.data[i * 4] = value;
+                imageData.data[i * 4 + 1] = value;
+                imageData.data[i * 4 + 2] = value;
+                imageData.data[i * 4 + 3] = 255;
+            }
+
+            ctx.putImageData(imageData, 0, 0);
+            const resultImage = new Image();
+            resultImage.src = canvas.toDataURL();
+            return resultImage;
         }
 
 
@@ -1283,8 +1292,13 @@
             // Verifica se o tipo de filtro é um dos nossos kernels predefinidos.
             if (type.startsWith('kernel_')) {
                 const kernelName = type.replace('kernel_', '');
-                const selectedKernel = SPATIAL_KERNELS[kernelName];
                 
+                if (selectedKernel) {
+                    const selectedKernel = SPATIAL_KERNELS[kernelName];
+                }
+                else{
+                    const selectedKernel = kernel;
+                }
                 const kernelImage = new Array(size * size).fill(0);
                 const kHeight = selectedKernel.length;
                 const kWidth = selectedKernel[0].length;
@@ -1635,11 +1649,7 @@
             switch (type) {
                 case 'laplacian':
                     // Laplacian filter
-                    const laplacianKernel = [
-                        [0, 1, 0],
-                        [1, -4, 1],
-                        [0, 1, 0]
-                    ];
+                    const laplacianKernel = SPATIAL_KERNELS.laplacian;
 
                     for (let y = 1; y < canvas.height - 1; y++) {
                         for (let x = 1; x < canvas.width - 1; x++) {
@@ -1654,13 +1664,13 @@
                                 }
                             }
 
-                            // Add 128 to make negative values visible
-                            const value = Math.min(255, Math.max(0, sum + 128));
+                            const value = Math.min(255, Math.max(0, sum));
                             processedData[idx] = value;
                             processedData[idx + 1] = value;
                             processedData[idx + 2] = value;
                         }
                     }
+
                     break;
 
                 case 'roberts':
@@ -1684,18 +1694,10 @@
                     }
                     break;
 
-                case 'prewitt':
+                case 'prewitt_combined':
                     // Prewitt operator
-                    const prewittX = [
-                        [-1, 0, 1],
-                        [-1, 0, 1],
-                        [-1, 0, 1]
-                    ];
-                    const prewittY = [
-                        [-1, -1, -1],
-                        [0, 0, 0],
-                        [1, 1, 1]
-                    ];
+                    const prewittX = SPATIAL_KERNELS.prewitt_x;
+                    const prewittY = SPATIAL_KERNELS.prewitt_y;
 
                     for (let y = 1; y < canvas.height - 1; y++) {
                         for (let x = 1; x < canvas.width - 1; x++) {
@@ -1721,18 +1723,10 @@
                     }
                     break;
 
-                case 'sobel':
+                case 'sobel_combined':
                     // Sobel operator
-                    const sobelX = [
-                        [-1, 0, 1],
-                        [-2, 0, 2],
-                        [-1, 0, 1]
-                    ];
-                    const sobelY = [
-                        [-1, -2, -1],
-                        [0, 0, 0],
-                        [1, 2, 1]
-                    ];
+                    const sobelX = SPATIAL_KERNELS.sobel_x;
+                    const sobelY = SPATIAL_KERNELS.sobel_y;
 
                     for (let y = 1; y < canvas.height - 1; y++) {
                         for (let x = 1; x < canvas.width - 1; x++) {
@@ -1757,6 +1751,132 @@
                         }
                     }
                     break;
+                case 'sobel_x':
+                    // Sobel X operator
+                    const sobelXKernel = SPATIAL_KERNELS.sobel_x;
+
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let gx = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weightX = sobelXKernel[ky + 1][kx + 1];
+                                    gx += data[kidx] * weightX;
+                                }
+                            }
+
+                            const value = Math.min(255, Math.max(0, gx));
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+                case 'sobel_y':
+                    // Sobel Y operator
+                    const sobelYKernel = SPATIAL_KERNELS.sobel_y;
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let gy = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weightY = sobelYKernel[ky + 1][kx + 1];
+                                    gy += data[kidx] * weightY;
+                                }
+                            }
+
+                            const value = Math.min(255, Math.max(0, gy));
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                break;
+                case 'prewitt_x':
+                    // Prewitt X operator
+                    const prewittXKernel = SPATIAL_KERNELS.prewitt_x;
+
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let gx = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weightX = prewittXKernel[ky + 1][kx + 1];
+                                    gx += data[kidx] * weightX;
+                                }
+                            }
+
+                            const value = Math.min(255, Math.max(0, gx));
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+                case 'prewitt_y':
+                    // Prewitt Y operator
+                    const prewittYKernel = SPATIAL_KERNELS.prewitt_y;
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            let gy = 0;
+
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    const weightY = prewittYKernel[ky + 1][kx + 1];
+                                    gy += data[kidx] * weightY;
+                                }
+                            }
+
+                            const value = Math.min(255, Math.max(0, gy));
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                case 'roberts_x':
+                    // Roberts X operator
+                    for (let y = 0; y < canvas.height - 1; y++) {
+                        for (let x = 0; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            const idx2 = ((y + 1) * canvas.width + (x + 1)) * 4;
+                            const idx3 = (y * canvas.width + (x + 1)) * 4;
+                            const idx4 = ((y + 1) * canvas.width + x) * 4;
+
+                            const gx = data[idx] - data[idx2];
+                            const value = Math.min(255, Math.max(0, gx));
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                    break;
+                case 'roberts_y':
+                    // Roberts Y operator
+                    for (let y = 0; y < canvas.height - 1; y++) {
+                        for (let x = 0; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            const idx3 = (y * canvas.width + (x + 1)) * 4;
+                            const idx4 = ((y + 1) * canvas.width + x) * 4;
+
+                            const gy = data[idx3] - data[idx4];
+                            const value = Math.min(255, Math.max(0, gy));
+                            processedData[idx] = value;
+                            processedData[idx + 1] = value;
+                            processedData[idx + 2] = value;
+                        }
+                    }
+                break;
             }
 
             ctx.putImageData(new ImageData(processedData, canvas.width, canvas.height), 0, 0);
@@ -1841,98 +1961,76 @@
                         processedData[i + 2] = value;
                     }
                     break;
-
+                
                 case 'canny':
-                    // Simplified Canny edge detection
-                    // First apply Gaussian blur
-                    const blurred = applyLowpassFilter(image, 'gaussian');
 
-                    const blurCanvas = document.createElement('canvas');
-                    blurCanvas.width = blurred.width;
-                    blurCanvas.height = blurred.height;
-                    const blurCtx = blurCanvas.getContext('2d');
-                    blurCtx.drawImage(blurred, 0, 0);
-                    const blurData = blurCtx.getImageData(0, 0, blurCanvas.width, blurCanvas.height).data;
-
-                    // Then apply Sobel operator
-                    const sobelX = [
-                        [-1, 0, 1],
-                        [-2, 0, 2],
-                        [-1, 0, 1]
-                    ];
-                    const sobelY = [
-                        [-1, -2, -1],
-                        [0, 0, 0],
-                        [1, 2, 1]
-                    ];
-
-                    const gradientMagnitude = new Array(data.length / 4).fill(0);
-                    const gradientDirection = new Array(data.length / 4).fill(0);
-
-                    for (let y = 1; y < blurCanvas.height - 1; y++) {
-                        for (let x = 1; x < blurCanvas.width - 1; x++) {
-                            const idx = (y * blurCanvas.width + x) * 4;
+                    // Gaussian blur 
+                    const blurredImage = applyLowpassFilter(image, 'gaussian');
+                    ctx.drawImage(blurredImage, 0, 0);
+                    const blurredData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+                    const processedBlurredData = new Uint8ClampedArray(blurredData.length);
+                    processedBlurredData.set(blurredData);
+                    
+                    // Sobel edge detection
+                    const sobelX = SPATIAL_KERNELS.sobel_x;
+                    const sobelY = SPATIAL_KERNELS.sobel_y;
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
                             let gx = 0;
                             let gy = 0;
 
                             for (let ky = -1; ky <= 1; ky++) {
                                 for (let kx = -1; kx <= 1; kx++) {
-                                    const kidx = ((y + ky) * blurCanvas.width + (x + kx)) * 4;
-                                    const weightX = sobelX[ky + 1][kx + 1];
-                                    const weightY = sobelY[ky + 1][kx + 1];
-                                    gx += blurData[kidx] * weightX;
-                                    gy += blurData[kidx] * weightY;
+                                    const kidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                    gx += processedBlurredData[kidx] * sobelX[ky + 1][kx + 1];
+                                    gy += processedBlurredData[kidx] * sobelY[ky + 1][kx + 1];
                                 }
                             }
 
-                            const magnitude = Math.sqrt(gx * gx + gy * gy);
-                            gradientMagnitude[y * blurCanvas.width + x] = magnitude;
-                            gradientDirection[y * blurCanvas.width + x] = Math.atan2(gy, gx);
+                            const magnitude = Math.min(255, Math.max(0, Math.sqrt(gx * gx + gy * gy)));
+                            processedData[idx] = magnitude;
+                            processedData[idx + 1] = magnitude;
+                            processedData[idx + 2] = magnitude;
                         }
                     }
 
-                    // Non-maximum suppression (simplified)
-                    for (let y = 1; y < blurCanvas.height - 1; y++) {
-                        for (let x = 1; x < blurCanvas.width - 1; x++) {
-                            const idx = y * blurCanvas.width + x;
-                            const angle = gradientDirection[idx];
-                            const mag = gradientMagnitude[idx];
+                    const lowThreshold = 50;
+                    const highThreshold = 150;
+                    for (let y = 1; y < canvas.height - 1; y++) {
+                        for (let x = 1; x < canvas.width - 1; x++) {
+                            const idx = (y * canvas.width + x) * 4;
+                            const value = processedData[idx];
 
-                            let neighbor1 = 0;
-                            let neighbor2 = 0;
-
-                            // Round angle to 0, 45, 90, or 135 degrees
-                            const angleDeg = (angle * 180 / Math.PI + 180) % 180;
-
-                            if ((angleDeg <= 22.5 || angleDeg > 157.5)) {
-                                // Horizontal
-                                neighbor1 = gradientMagnitude[y * blurCanvas.width + (x - 1)];
-                                neighbor2 = gradientMagnitude[y * blurCanvas.width + (x + 1)];
-                            } else if (angleDeg > 22.5 && angleDeg <= 67.5) {
-                                // Diagonal 1
-                                neighbor1 = gradientMagnitude[(y - 1) * blurCanvas.width + (x + 1)];
-                                neighbor2 = gradientMagnitude[(y + 1) * blurCanvas.width + (x - 1)];
-                            } else if (angleDeg > 67.5 && angleDeg <= 112.5) {
-                                // Vertical
-                                neighbor1 = gradientMagnitude[(y - 1) * blurCanvas.width + x];
-                                neighbor2 = gradientMagnitude[(y + 1) * blurCanvas.width + x];
+                            if (value < lowThreshold) {
+                                processedData[idx] = 0;
+                                processedData[idx + 1] = 0;
+                                processedData[idx + 2] = 0;
+                            } else if (value >= highThreshold) {
+                                processedData[idx] = 255;
+                                processedData[idx + 1] = 255;
+                                processedData[idx + 2] = 255;
                             } else {
-                                // Diagonal 2
-                                neighbor1 = gradientMagnitude[(y - 1) * blurCanvas.width + (x - 1)];
-                                neighbor2 = gradientMagnitude[(y + 1) * blurCanvas.width + (x + 1)];
-                            }
-
-                            if (mag >= neighbor1 && mag >= neighbor2) {
-                                processedData[idx * 4] = mag > 50 ? 255 : 0;
-                                processedData[idx * 4 + 1] = mag > 50 ? 255 : 0;
-                                processedData[idx * 4 + 2] = mag > 50 ? 255 : 0;
-                            } else {
-                                processedData[idx * 4] = 0;
-                                processedData[idx * 4 + 1] = 0;
-                                processedData[idx * 4 + 2] = 0;
+                                // Check neighbors
+                                let isEdge = false;
+                                for (let ky = -1; ky <= 1; ky++) {
+                                    for (let kx = -1; kx <= 1; kx++) {
+                                        if (ky === 0 && kx === 0) continue;
+                                        const nidx = ((y + ky) * canvas.width + (x + kx)) * 4;
+                                        if (processedData[nidx] >= highThreshold) {
+                                            isEdge = true;
+                                            break;
+                                        }
+                                    }
+                                    if (isEdge) break;
+                                }
+                                processedData[idx] = isEdge ? 255 : 0;
+                                processedData[idx + 1] = isEdge ? 255 : 0;
+                                processedData[idx + 2] = isEdge ? 255 : 0;
                             }
                         }
                     }
+
                     break;
 
                 case 'adaptive':
@@ -2165,8 +2263,8 @@
             return dilated;
         }
 
-        // Select objects
-        function selectObjects(image, type) {
+        
+        function selectObjects(image, subtype) {
             const canvas = document.createElement('canvas');
             canvas.width = image.width;
             canvas.height = image.height;
@@ -2176,7 +2274,7 @@
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
 
-            // Create a binary image first
+            // Primeiro, binariza a imagem se não estiver já binarizada
             const binaryData = new Uint8ClampedArray(data.length);
             for (let i = 0; i < data.length; i += 4) {
                 const value = data[i] > 128 ? 255 : 0;
@@ -2186,225 +2284,217 @@
                 binaryData[i + 3] = 255;
             }
 
-            // Find contours (simplified)
-            const contours = findContours(binaryData, canvas.width, canvas.height);
-
-            if (contours.length === 0) {
-                return image; // No contours found
-            }
-
-            // Select object based on type
-            let selectedContour = null;
-
-            switch (type) {
-                case 'largest':
-                    // Find contour with maximum area
-                    let maxArea = 0;
-                    contours.forEach(contour => {
-                        const area = calculateContourArea(contour);
-                        if (area > maxArea) {
-                            maxArea = area;
-                            selectedContour = contour;
-                        }
-                    });
-                    break;
-
-                case 'central':
-                    // Find contour closest to center
-                    const centerX = canvas.width / 2;
-                    const centerY = canvas.height / 2;
-                    let minDist = Infinity;
-
-                    contours.forEach(contour => {
-                        // Calculate centroid
-                        let sumX = 0;
-                        let sumY = 0;
-                        let count = 0;
-
-                        contour.forEach(point => {
-                            sumX += point.x;
-                            sumY += point.y;
-                            count++;
-                        });
-
-                        const centroidX = sumX / count;
-                        const centroidY = sumY / count;
-                        const dist = Math.sqrt(Math.pow(centroidX - centerX, 2) + Math.pow(centroidY - centerY, 2));
-
-                        if (dist < minDist) {
-                            minDist = dist;
-                            selectedContour = contour;
-                        }
-                    });
-                    break;
-
-                case 'closed':
-                    // Select all closed contours
-                    // Select all closed contours
-                    selectedContour = [];
-                    contours.forEach(contour => {
-                        if (isContourClosed(contour)) {
-                            selectedContour.push(...contour);
-                        }
-                    });
-                    break;
-            }
-
-            if (!selectedContour) {
-                return image; // No contour selected
-            }
-
-            // Create mask from selected contour
-            const mask = new Uint8ClampedArray(data.length).fill(0);
-
-            if (Array.isArray(selectedContour[0])) {
-                // Single contour
-                const points = selectedContour;
-                const minX = Math.min(...points.map(p => p.x));
-                const maxX = Math.max(...points.map(p => p.x));
-                const minY = Math.min(...points.map(p => p.y));
-                const maxY = Math.max(...points.map(p => p.y));
-
-                // Simple fill (for demo purposes)
-                for (let y = minY; y <= maxY; y++) {
-                    for (let x = minX; x <= maxX; x++) {
-                        const idx = (y * canvas.width + x) * 4;
-                        mask[idx] = 255;
-                        mask[idx + 1] = 255;
-                        mask[idx + 2] = 255;
-                    }
-                }
-            } else {
-                // Multiple contours (for closed option)
-                selectedContour.forEach(point => {
-                    const idx = (point.y * canvas.width + point.x) * 4;
-                    mask[idx] = 255;
-                    mask[idx + 1] = 255;
-                    mask[idx + 2] = 255;
-                });
-            }
-
-            // Apply mask to original image
+            // Encontra componentes conectados
+            const components = findConnectedComponents(binaryData, canvas.width, canvas.height);
+            
+            // Cria uma imagem de resultado inicialmente preta
             const resultData = new Uint8ClampedArray(data.length);
-            for (let i = 0; i < data.length; i += 4) {
-                resultData[i] = mask[i] === 255 ? data[i] : 0;
-                resultData[i + 1] = mask[i + 1] === 255 ? data[i + 1] : 0;
-                resultData[i + 2] = mask[i + 2] === 255 ? data[i + 2] : 0;
+            for (let i = 0; i < resultData.length; i += 4) {
+                resultData[i] = 0;
+                resultData[i + 1] = 0;
+                resultData[i + 2] = 0;
                 resultData[i + 3] = 255;
             }
 
-            ctx.putImageData(new ImageData(resultData, canvas.width, canvas.height), 0, 0);
+            switch (subtype) {
+                case 'largest':
+                    console.log('Largest component selected');
+                    // Seleciona o maior objeto (componente com mais pixels)
+                    if (components.length > 0) {
+                        let largestComponent = components[0];
+                        for (let i = 1; i < components.length; i++) {
+                            if (components[i].pixels.length > largestComponent.pixels.length) {
+                                largestComponent = components[i];
+                            }
+                        }
+                        
+                        // Pinta o maior componente de branco
+                        largestComponent.pixels.forEach(pixelIndex => {
+                            const idx = pixelIndex * 4;
+                            resultData[idx] = 255;
+                            resultData[idx + 1] = 255;
+                            resultData[idx + 2] = 255;
+                        });
+                    }
+                    break;
 
+                case 'central':
+                    console.log('Central component selected');
+                    // Seleciona o objeto mais próximo do centro da imagem
+                    if (components.length > 0) {
+                        const centerX = canvas.width / 2;
+                        const centerY = canvas.height / 2;
+                        let centralComponent = components[0];
+                        let minDistance = Infinity;
+
+                        components.forEach(component => {
+                            const centroid = calculateCentroid(component.pixels, canvas.width);
+                            const distance = Math.sqrt(
+                                Math.pow(centroid.x - centerX, 2) + 
+                                Math.pow(centroid.y - centerY, 2)
+                            );
+                            
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                centralComponent = component;
+                            }
+                        });
+
+                        // Pinta o componente central de branco
+                        centralComponent.pixels.forEach(pixelIndex => {
+                            const idx = pixelIndex * 4;
+                            resultData[idx] = 255;
+                            resultData[idx + 1] = 255;
+                            resultData[idx + 2] = 255;
+                        });
+                    }
+                    break;
+
+                case 'closed':
+                    console.log('Closed contours selected');
+                    // Seleciona objetos com contorno fechado (sem buracos)
+                    components.forEach(component => {
+                        if (isClosedContour(component, canvas.width, canvas.height)) {
+                            component.pixels.forEach(pixelIndex => {
+                                const idx = pixelIndex * 4;
+                                resultData[idx] = 255;
+                                resultData[idx + 1] = 255;
+                                resultData[idx + 2] = 255;
+                            });
+                        }
+                    });
+                    break;
+            }
+
+            ctx.putImageData(new ImageData(resultData, canvas.width, canvas.height), 0, 0);
+            
             const resultImage = new Image();
             resultImage.src = canvas.toDataURL();
             return resultImage;
         }
 
-        function findContours(data, width, height) {
-            const contours = [];
+        
+        // Função auxiliar para encontrar componentes conectados
+        function findConnectedComponents(binaryData, width, height) {
             const visited = new Array(width * height).fill(false);
+            const components = [];
 
-            const isWhite = (x, y) => {
-                const idx = (y * width + x) * 4;
-                return data[idx] === 255;
-            };
+            function floodFill(startX, startY, componentPixels) {
+                const stack = [{x: startX, y: startY}];
+                
+                while (stack.length > 0) {
+                    const {x, y} = stack.pop();
+                    const index = y * width + x;
+                    
+                    if (x < 0 || x >= width || y < 0 || y >= height || 
+                        visited[index] || binaryData[index * 4] === 0) {
+                        continue;
+                    }
+                    
+                    visited[index] = true;
+                    componentPixels.push(index);
+                    
+                    // Adiciona vizinhos 8-conectados
+                    stack.push({x: x + 1, y: y});
+                    stack.push({x: x - 1, y: y});
+                    stack.push({x: x, y: y + 1});
+                    stack.push({x: x, y: y - 1});
+                    stack.push({x: x + 1, y: y + 1});
+                    stack.push({x: x - 1, y: y - 1});
+                    stack.push({x: x + 1, y: y - 1});
+                    stack.push({x: x - 1, y: y + 1});
+                }
 
-            const isEdgePixel = (x, y) => {
-                if (!isWhite(x, y)) return false;
-                const neighbors = [
-                    [-1, -1],
-                    [0, -1],
-                    [1, -1],
-                    [-1, 0],
-                    [1, 0],
-                    [-1, 1],
-                    [0, 1],
-                    [1, 1],
-                ];
-                return neighbors.some(([dx, dy]) => {
-                    const nx = x + dx;
-                    const ny = y + dy;
-                    if (nx < 0 || ny < 0 || nx >= width || ny >= height) return true;
-                    return !isWhite(nx, ny);
-                });
-            };
+                
+            }
 
-            for (let y = 1; y < height - 1; y++) {
-                for (let x = 1; x < width - 1; x++) {
-                    const idx = y * width + x;
-
-                    if (!visited[idx] && isWhite(x, y) && isEdgePixel(x, y)) {
-                        const contour = [];
-                        const queue = [{
-                            x,
-                            y
-                        }];
-                        visited[idx] = true;
-
-                        while (queue.length > 0) {
-                            const point = queue.shift();
-                            contour.push(point);
-
-                            const neighbors = [
-                                [-1, -1],
-                                [0, -1],
-                                [1, -1],
-                                [-1, 0],
-                                [1, 0],
-                                [-1, 1],
-                                [0, 1],
-                                [1, 1],
-                            ];
-
-                            for (const [dx, dy] of neighbors) {
-                                const nx = point.x + dx;
-                                const ny = point.y + dy;
-                                const nIdx = ny * width + nx;
-
-                                if (nx >= 0 && nx < width && ny >= 0 && ny < height &&
-                                    !visited[nIdx] && isWhite(nx, ny) && isEdgePixel(nx, ny)) {
-                                    visited[nIdx] = true;
-                                    queue.push({
-                                        x: nx,
-                                        y: ny
-                                    });
-                                }
-                            }
-                        }
-
-                        if (contour.length > 0) {
-                            contours.push(contour);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const index = y * width + x;
+                    if (!visited[index] && binaryData[index * 4] === 255) {
+                        const componentPixels = [];
+                        floodFill(x, y, componentPixels);
+                        if (componentPixels.length > 10) { // Filtra componentes muito pequenos
+                            components.push({pixels: componentPixels});
                         }
                     }
                 }
             }
 
-            return contours;
+            return components;
         }
 
-        // Calculate contour area (simplified)
-        function calculateContourArea(contour) {
-            // Simple approximation using bounding box area
-            if (contour.length === 0) return 0;
-
-            const minX = Math.min(...contour.map(p => p.x));
-            const maxX = Math.max(...contour.map(p => p.x));
-            const minY = Math.min(...contour.map(p => p.y));
-            const maxY = Math.max(...contour.map(p => p.y));
-
-            return (maxX - minX) * (maxY - minY);
+        // Função auxiliar para calcular o centroide de um componente
+        function calculateCentroid(pixels, width) {
+            let sumX = 0, sumY = 0;
+            
+            pixels.forEach(pixelIndex => {
+                const x = pixelIndex % width;
+                const y = Math.floor(pixelIndex / width);
+                sumX += x;
+                sumY += y;
+            });
+            
+            return {
+                x: sumX / pixels.length,
+                y: sumY / pixels.length
+            };
         }
 
-        // Check if contour is closed (simplified)
-        function isContourClosed(contour) {
-            if (contour.length < 3) return false;
+        // Função auxiliar para verificar se um contorno é fechado
+        function isClosedContour(component, width, height) {
+            // Verifica se o componente toca as bordas da imagem
+            // Se tocar, provavelmente não é um contorno fechado
+            for (const pixelIndex of component.pixels) {
+                const x = pixelIndex % width;
+                const y = Math.floor(pixelIndex / width);
+                
+                if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
+                    return false; // Toca a borda, não é fechado
+                }
+            }
+            
+            // Verifica se o componente tem uma forma aproximadamente circular/fechada
+            // usando a razão entre área e perímetro
+            const area = component.pixels.length;
+            const perimeter = calculatePerimeter(component, width, height);
+            const circularity = 4 * Math.PI * area / (perimeter * perimeter);
+            
+            // Se a circularidade for maior que um threshold, considera fechado
+            return circularity > 0.3; // Threshold ajustável
+        }
 
-            // Check if first and last points are close
-            const first = contour[0];
-            const last = contour[contour.length - 1];
-            const dist = Math.sqrt(Math.pow(first.x - last.x, 2) + Math.pow(first.y - last.y, 2));
-
-            return dist < 5; // Arbitrary threshold
+        // Função auxiliar para calcular o perímetro de um componente
+        function calculatePerimeter(component, width, height) {
+            let perimeter = 0;
+            const pixelSet = new Set(component.pixels);
+            
+            component.pixels.forEach(pixelIndex => {
+                const x = pixelIndex % width;
+                const y = Math.floor(pixelIndex / width);
+                
+                // Verifica os 4 vizinhos diretos
+                const neighbors = [
+                    {x: x + 1, y: y},
+                    {x: x - 1, y: y},
+                    {x: x, y: y + 1},
+                    {x: x, y: y - 1}
+                ];
+                
+                neighbors.forEach(neighbor => {
+                    if (neighbor.x >= 0 && neighbor.x < width && 
+                        neighbor.y >= 0 && neighbor.y < height) {
+                        const neighborIndex = neighbor.y * width + neighbor.x;
+                        if (!pixelSet.has(neighborIndex)) {
+                            perimeter += 1;
+                        }
+                    } else {
+                        perimeter += 1; // Borda da imagem
+                    }
+                });
+            });
+            
+            return perimeter;
         }
 
         // Apply custom filter
@@ -2572,7 +2662,12 @@
             if (type === 'none') return;
 
             let operation = {
-                type
+                type: type,
+                subtype: null,
+                parameter: null,
+                cutoff: null,
+                kernel: null,
+                threshold: null
             };
 
             // Hide result section if it was previously shown
@@ -2583,7 +2678,11 @@
                  
                 case 'fourier_filter':
                     operation.subtype = document.getElementById('fourierFilterType').value;
-                    operation.cutoff = parseInt(document.getElementById('fourierCutoff').value);
+                    if (operation.subtype === 'lowpass' || operation.subtype === 'highpass') {
+                        operation.cutoff = parseInt(document.getElementById('fourierCutoff').value);
+                    } else if (operation.subtype === 'custom_kernel') {
+                        operation.kernel = document.getElementById('fourierKernelText').value;
+                    }
                     break;
 
                 case 'noise':
@@ -2633,41 +2732,50 @@
 
         async function updatePipelineDisplay() {
             const container = document.getElementById('pipelineOperations');
-            const imgResultEl = document.getElementById('pipelineResult');
+            const resultImgEl = document.getElementById('pipelineResult');
             container.innerHTML = '';
-
-            // Lógica de exibição dos itens (sem alterações)
-            if (pipeline.length === 0) {
-                container.innerHTML = '<p class="text-gray-400">Nenhuma operação adicionada ainda.</p>';
-                if (grayImage) { imgResultEl.src = grayImage.src; currentImage = grayImage; }
-                return;
-            }
             pipeline.forEach((op, index) => {
                 const opDiv = document.createElement('div');
                 opDiv.className = 'flex items-center justify-between p-2 bg-gray-800 rounded mb-2';
                 let desc = op.type.replace(/_/g, ' ');
-                if (op.subtype) desc += ` (${op.subtype})`;
-                if (op.threshold !== undefined) desc += ` [limiar: ${op.threshold}]`;
+                if (op.subtype) desc += ` (${op.subtype.replace(/_/g, ' ')})`;
+                if (op.threshold) desc += ` [limiar: ${op.threshold}]`;
                 if (op.kernel) desc += ` [kernel: ${op.kernel}]`;
-                if (op.type === 'noise') {
-                    const label = op.subtype === 'quantization' ? 'níveis' : 'intensidade';
-                    desc += ` [${label}: ${op.parameter}]`;
+                if (op.parameter) {
+                    desc += op.subtype === 'quantization' ? ` [níveis: ${op.parameter}]` : ` [intensidade: ${op.parameter}%]`;
                 }
-                if (op.type === 'fourier_filter') { desc += ` [raio: ${op.cutoff}]`; }
-                opDiv.innerHTML = `<span class="capitalize">${desc}</span><button class="text-red-500" onclick="removeOperation(${index})">Remover</button>`;
+                if (op.cutoff) desc += ` [raio: ${op.cutoff}]`;
+                opDiv.innerHTML = `<span>${desc}</span><button class="text-red-500" onclick="removeOperation(${index})">Remover</button>`;
                 container.appendChild(opDiv);
             });
 
-            // Lógica de processamento do pipeline
-            let processedImage = grayImage;
-            for (const op of pipeline) {
-                // [CORREÇÃO CHAVE]
-                // Passa 'true' para indicar que esta é a execução principal do pipeline.
-                processedImage = await processSingleOperation(op, processedImage, true);
+            // --- Lógica de Processamento Assíncrono ---
+            
+            let currentImageSrc = grayImage ? grayImage.src : null;
+            
+            if (pipeline.length === 0) {
+                resultImgEl.src = currentImageSrc || '';
+                lastPipelineImageSrc = currentImageSrc; // [MUDANÇA CHAVE]
+                updatePreview(); // Atualiza o preview para refletir o estado vazio.
+                return;
             }
 
-            imgResultEl.src = processedImage.src;
-            currentImage = processedImage;
+            resultImgEl.src = '';
+
+            try {
+                for (const operation of pipeline) {
+                    const imageToProcess = await loadImageAsync(currentImageSrc);
+                    const resultImage = processSingleOperation(imageToProcess, operation);
+                    currentImageSrc = resultImage.src;
+                }
+            } catch (error) {
+                console.error("Erro ao processar o pipeline:", error);
+                currentImageSrc = grayImage ? grayImage.src : '';
+            }
+
+            resultImgEl.src = currentImageSrc;
+            lastPipelineImageSrc = currentImageSrc; // [MUDANÇA CHAVE]
+            updatePreview(); // Atualiza o preview com base no novo resultado do pipeline.
         }
 
         // Função para limpar o pipeline

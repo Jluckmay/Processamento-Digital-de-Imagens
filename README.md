@@ -55,7 +55,7 @@ Este projeto é uma aplicação interativa para processamento digital de imagens
 
 ## Interface Web
 
-Acesse em [jluckmay.github.io/PDI](jluckmay.github.io/PDI).
+Acesse em [jluckmay.github.io/Processamento-Digital-de-Imagens/](jluckmay.github.io/Processamento-Digital-de-Imagens/).
 
 ## Licença
 
