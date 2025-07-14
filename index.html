@@ -2264,7 +2264,7 @@
         }
 
         
-        function selectObjects(image, subtype) {
+        function selectObjects(image, type) {
             const canvas = document.createElement('canvas');
             canvas.width = image.width;
             canvas.height = image.height;
@@ -2274,227 +2274,183 @@
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             const data = imageData.data;
 
-            // Primeiro, binariza a imagem se não estiver já binarizada
+            // 1. Binariza a imagem para encontrar os contornos.
             const binaryData = new Uint8ClampedArray(data.length);
             for (let i = 0; i < data.length; i += 4) {
-                const value = data[i] > 128 ? 255 : 0;
-                binaryData[i] = value;
-                binaryData[i + 1] = value;
-                binaryData[i + 2] = value;
+                binaryData[i] = data[i] > 128 ? 255 : 0;
+                binaryData[i + 1] = data[i] > 128 ? 255 : 0;
+                binaryData[i + 2] = data[i] > 128 ? 255 : 0;
                 binaryData[i + 3] = 255;
             }
 
-            // Encontra componentes conectados
-            const components = findConnectedComponents(binaryData, canvas.width, canvas.height);
+            const contours = findContours(binaryData, canvas.width, canvas.height);
             
-            // Cria uma imagem de resultado inicialmente preta
-            const resultData = new Uint8ClampedArray(data.length);
-            for (let i = 0; i < resultData.length; i += 4) {
-                resultData[i] = 0;
-                resultData[i + 1] = 0;
-                resultData[i + 2] = 0;
-                resultData[i + 3] = 255;
-            }
+            // Cria uma máscara preta do mesmo tamanho da imagem.
+            const maskCanvas = document.createElement('canvas');
+            maskCanvas.width = canvas.width;
+            maskCanvas.height = canvas.height;
+            const maskCtx = maskCanvas.getContext('2d');
+            maskCtx.fillStyle = 'black';
+            maskCtx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            let contoursToDraw = [];
 
-            switch (subtype) {
-                case 'largest':
-                    console.log('Largest component selected');
-                    // Seleciona o maior objeto (componente com mais pixels)
-                    if (components.length > 0) {
-                        let largestComponent = components[0];
-                        for (let i = 1; i < components.length; i++) {
-                            if (components[i].pixels.length > largestComponent.pixels.length) {
-                                largestComponent = components[i];
-                            }
-                        }
-                        
-                        // Pinta o maior componente de branco
-                        largestComponent.pixels.forEach(pixelIndex => {
-                            const idx = pixelIndex * 4;
-                            resultData[idx] = 255;
-                            resultData[idx + 1] = 255;
-                            resultData[idx + 2] = 255;
-                        });
-                    }
-                    break;
+            // 2. Seleciona os contornos com base no método.
+            if (contours.length > 0) {
+                switch (type) {
+                    case 'largest':
+                        const largestContour = contours.reduce((prev, current) => 
+                            (calculateContourArea(prev) > calculateContourArea(current)) ? prev : current
+                        );
+                        contoursToDraw.push(largestContour);
+                        break;
 
-                case 'central':
-                    console.log('Central component selected');
-                    // Seleciona o objeto mais próximo do centro da imagem
-                    if (components.length > 0) {
+                    case 'central':
                         const centerX = canvas.width / 2;
                         const centerY = canvas.height / 2;
-                        let centralComponent = components[0];
-                        let minDistance = Infinity;
-
-                        components.forEach(component => {
-                            const centroid = calculateCentroid(component.pixels, canvas.width);
-                            const distance = Math.sqrt(
-                                Math.pow(centroid.x - centerX, 2) + 
-                                Math.pow(centroid.y - centerY, 2)
-                            );
-                            
-                            if (distance < minDistance) {
-                                minDistance = distance;
-                                centralComponent = component;
+                        let minDist = Infinity;
+                        let centralContour = null;
+                        contours.forEach(contour => {
+                            const M = calculateMoments(contour);
+                            if (M.m00 !== 0) {
+                                const cx = M.m10 / M.m00;
+                                const cy = M.m01 / M.m00;
+                                const dist = Math.sqrt((cx - centerX)**2 + (cy - centerY)**2);
+                                if (dist < minDist) {
+                                    minDist = dist;
+                                    centralContour = contour;
+                                }
                             }
                         });
+                        if (centralContour) contoursToDraw.push(centralContour);
+                        break;
 
-                        // Pinta o componente central de branco
-                        centralComponent.pixels.forEach(pixelIndex => {
-                            const idx = pixelIndex * 4;
-                            resultData[idx] = 255;
-                            resultData[idx + 1] = 255;
-                            resultData[idx + 2] = 255;
-                        });
-                    }
-                    break;
-
-                case 'closed':
-                    console.log('Closed contours selected');
-                    // Seleciona objetos com contorno fechado (sem buracos)
-                    components.forEach(component => {
-                        if (isClosedContour(component, canvas.width, canvas.height)) {
-                            component.pixels.forEach(pixelIndex => {
-                                const idx = pixelIndex * 4;
-                                resultData[idx] = 255;
-                                resultData[idx + 1] = 255;
-                                resultData[idx + 2] = 255;
-                            });
-                        }
-                    });
-                    break;
+                    case 'closed': // Em nossa implementação, todos os contornos encontrados já são fechados.
+                        contoursToDraw = contours;
+                        break;
+                }
             }
 
-            ctx.putImageData(new ImageData(resultData, canvas.width, canvas.height), 0, 0);
-            
+            // 3. Desenha os contornos selecionados em branco na máscara.
+            if (contoursToDraw.length > 0) {
+                maskCtx.fillStyle = 'white';
+                contoursToDraw.forEach(contour => {
+                    maskCtx.beginPath();
+                    maskCtx.moveTo(contour[0].x, contour[0].y);
+                    for (let i = 1; i < contour.length; i++) {
+                        maskCtx.lineTo(contour[i].x, contour[i].y);
+                    }
+                    maskCtx.closePath();
+                    maskCtx.fill();
+                });
+            }
+
+            // 4. Retorna a máscara como a imagem final.
             const resultImage = new Image();
-            resultImage.src = canvas.toDataURL();
+            resultImage.src = maskCanvas.toDataURL();
             return resultImage;
         }
 
+        function calculateContourArea(contour) {
+            let area = 0;
+            let j = contour.length - 1;
+            for (let i = 0; i < contour.length; i++) {
+                area += (contour[j].x + contour[i].x) * (contour[j].y - contour[i].y);
+                j = i;
+            }
+            return Math.abs(area / 2);
+        }
         
-        // Função auxiliar para encontrar componentes conectados
-        function findConnectedComponents(binaryData, width, height) {
-            const visited = new Array(width * height).fill(false);
-            const components = [];
+        function findContours(data, width, height) {
+            const contours = [];
+            const visited = new Uint8Array(width * height);
+            const directions = [[0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1], [1, 0], [1, 1]]; // 8 direções
 
-            function floodFill(startX, startY, componentPixels) {
-                const stack = [{x: startX, y: startY}];
-                
-                while (stack.length > 0) {
-                    const {x, y} = stack.pop();
-                    const index = y * width + x;
-                    
-                    if (x < 0 || x >= width || y < 0 || y >= height || 
-                        visited[index] || binaryData[index * 4] === 0) {
-                        continue;
-                    }
-                    
-                    visited[index] = true;
-                    componentPixels.push(index);
-                    
-                    // Adiciona vizinhos 8-conectados
-                    stack.push({x: x + 1, y: y});
-                    stack.push({x: x - 1, y: y});
-                    stack.push({x: x, y: y + 1});
-                    stack.push({x: x, y: y - 1});
-                    stack.push({x: x + 1, y: y + 1});
-                    stack.push({x: x - 1, y: y - 1});
-                    stack.push({x: x + 1, y: y - 1});
-                    stack.push({x: x - 1, y: y + 1});
-                }
+            for (let y = 1; y < height - 1; y++) {
+                for (let x = 1; x < width - 1; x++) {
+                    const idx = y * width + x;
+                    // Encontra um pixel de borda que ainda não foi visitado.
+                    if (data[idx * 4] === 255 && !visited[idx]) {
+                        // Verifica se é um contorno externo (não tem um pixel branco acima ou à esquerda).
+                        if (data[(idx - width) * 4] === 0 || data[(idx - 1) * 4] === 0) {
+                            const contour = [];
+                            let currentX = x;
+                            let currentY = y;
+                            let dir = 0;
 
-                
-            }
+                            do {
+                                let foundNext = false;
+                                for (let i = 0; i < 8; i++) {
+                                    const nextDir = (dir + i) % 8;
+                                    const [dx, dy] = directions[nextDir];
+                                    const nextX = currentX + dx;
+                                    const nextY = currentY + dy;
 
-            for (let y = 0; y < height; y++) {
-                for (let x = 0; x < width; x++) {
-                    const index = y * width + x;
-                    if (!visited[index] && binaryData[index * 4] === 255) {
-                        const componentPixels = [];
-                        floodFill(x, y, componentPixels);
-                        if (componentPixels.length > 10) { // Filtra componentes muito pequenos
-                            components.push({pixels: componentPixels});
+                                    if (nextX >= 0 && nextX < width && nextY >= 0 && nextY < height) {
+                                        const nextIdx = nextY * width + nextX;
+                                        if (data[nextIdx * 4] === 255) {
+                                            contour.push({ x: currentX, y: currentY });
+                                            visited[idx] = 1;
+                                            currentX = nextX;
+                                            currentY = nextY;
+                                            dir = (nextDir + 5) % 8; // Olha para trás para continuar a borda
+                                            foundNext = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (!foundNext) break;
+                            } while (currentX !== x || currentY !== y);
+                            
+                            if (contour.length > 2) {
+                                contours.push(contour);
+                            }
                         }
                     }
                 }
             }
-
-            return components;
+            return contours;
         }
 
-        // Função auxiliar para calcular o centroide de um componente
-        function calculateCentroid(pixels, width) {
-            let sumX = 0, sumY = 0;
+        function calculateMoments(contour) {
+            const moments = { m00: 0, m10: 0, m01: 0 };
+            // Para calcular momentos, precisamos preencher o contorno.
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
             
-            pixels.forEach(pixelIndex => {
-                const x = pixelIndex % width;
-                const y = Math.floor(pixelIndex / width);
-                sumX += x;
-                sumY += y;
+            // Encontra o bounding box para otimizar o tamanho do canvas.
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            contour.forEach(p => {
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
             });
             
-            return {
-                x: sumX / pixels.length,
-                y: sumY / pixels.length
-            };
-        }
+            canvas.width = maxX - minX + 1;
+            canvas.height = maxY - minY + 1;
 
-        // Função auxiliar para verificar se um contorno é fechado
-        function isClosedContour(component, width, height) {
-            // Verifica se o componente toca as bordas da imagem
-            // Se tocar, provavelmente não é um contorno fechado
-            for (const pixelIndex of component.pixels) {
-                const x = pixelIndex % width;
-                const y = Math.floor(pixelIndex / width);
-                
-                if (x === 0 || x === width - 1 || y === 0 || y === height - 1) {
-                    return false; // Toca a borda, não é fechado
+            // Desenha o contorno preenchido no canvas temporário.
+            ctx.fillStyle = 'white';
+            ctx.beginPath();
+            ctx.moveTo(contour[0].x - minX, contour[0].y - minY);
+            for (let i = 1; i < contour.length; i++) {
+                ctx.lineTo(contour[i].x - minX, contour[i].y - minY);
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            for (let y = 0; y < canvas.height; y++) {
+                for (let x = 0; x < canvas.width; x++) {
+                    if (data[(y * canvas.width + x) * 4] === 255) { // Se o pixel for branco
+                        moments.m00 += 1;
+                        moments.m10 += x + minX; // Adiciona o offset de volta
+                        moments.m01 += y + minY;
+                    }
                 }
             }
-            
-            // Verifica se o componente tem uma forma aproximadamente circular/fechada
-            // usando a razão entre área e perímetro
-            const area = component.pixels.length;
-            const perimeter = calculatePerimeter(component, width, height);
-            const circularity = 4 * Math.PI * area / (perimeter * perimeter);
-            
-            // Se a circularidade for maior que um threshold, considera fechado
-            return circularity > 0.3; // Threshold ajustável
-        }
-
-        // Função auxiliar para calcular o perímetro de um componente
-        function calculatePerimeter(component, width, height) {
-            let perimeter = 0;
-            const pixelSet = new Set(component.pixels);
-            
-            component.pixels.forEach(pixelIndex => {
-                const x = pixelIndex % width;
-                const y = Math.floor(pixelIndex / width);
-                
-                // Verifica os 4 vizinhos diretos
-                const neighbors = [
-                    {x: x + 1, y: y},
-                    {x: x - 1, y: y},
-                    {x: x, y: y + 1},
-                    {x: x, y: y - 1}
-                ];
-                
-                neighbors.forEach(neighbor => {
-                    if (neighbor.x >= 0 && neighbor.x < width && 
-                        neighbor.y >= 0 && neighbor.y < height) {
-                        const neighborIndex = neighbor.y * width + neighbor.x;
-                        if (!pixelSet.has(neighborIndex)) {
-                            perimeter += 1;
-                        }
-                    } else {
-                        perimeter += 1; // Borda da imagem
-                    }
-                });
-            });
-            
-            return perimeter;
+            return moments;
         }
 
         // Apply custom filter
